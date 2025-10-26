@@ -1,0 +1,1047 @@
+from fastapi import APIRouter, Depends, HTTPException, status, Query, FastAPI, Response
+from fastapi.responses import StreamingResponse
+from sqlalchemy import create_engine, text
+from sqlalchemy.orm import Session, sessionmaker
+import os
+from typing import Dict, Any, Optional, List
+from uuid import UUID
+import requests
+from bs4 import BeautifulSoup
+import json
+from dotenv import load_dotenv
+import uuid
+import redis
+from fastapi import BackgroundTasks
+from fastapi.responses import JSONResponse
+from datetime import date, datetime
+from minio import Minio
+from minio.error import S3Error
+import re
+import io
+
+
+load_dotenv()
+
+app = FastAPI(title="QL-Backend")
+
+
+DB_USER = os.getenv("DB_USER", "postgres")
+DB_PASSWORD = os.getenv("DB_PASSWORD", "postgres")
+DB_HOST = os.getenv("DB_HOST", "postgres")
+DB_PORT = os.getenv("DB_PORT", "5432")
+DB_NAME = os.getenv("DB_NAME", "backend")
+BACKEND_REDIS_URL = os.getenv("BACKEND_REDIS_URL", "redis://localhost:6379/1")
+MINIO_ENDPOINT = os.getenv("MINIO_HOST", "minio:9000")
+MINIO_KEY = os.getenv("MINIO_KEY", "quality_link")
+MINIO_SECRET = os.getenv("MINIO_SECRET", "quality_link_password")
+BUCKET_NAME = os.getenv("BUCKET_NAME", "bucket_name")
+
+
+DATABASE_URL = f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+redis_client = redis.from_url(BACKEND_REDIS_URL)
+
+
+engine = create_engine(DATABASE_URL)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+@app.get("/health/database")
+async def check_database_connection():
+    """
+    Check if database connection is working properly.
+    """
+    try:
+        engine = create_engine(DATABASE_URL)
+        
+        with engine.connect() as connection:
+            result = connection.execute(text("SELECT 1"))
+            result.fetchone()
+        
+        return {
+            "status": "success",
+            "message": "Database connection is healthy",
+            "database": DB_USER
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": f"Database connection failed: {str(e)}",
+            "database": DB_USER
+        }
+
+
+@app.get("/")
+async def root():
+    return {"message": "Database connection testing API is running. Use /health/database to test connection."}
+
+
+@app.get("/get_all_providers", tags=["Providers"], status_code=status.HTTP_200_OK)
+async def get_all_providers(
+    search_provider: Optional[str] = Query(None, title="Search Provider"),
+    page: int = Query(1, ge=1, title="Page Number"),
+    page_size: int = Query(10, ge=1, le=100, title="Page Size"),
+    db: Session = Depends(get_db)
+) -> Dict[str, Any]:
+    try:
+        offset = (page - 1) * page_size
+
+        params = {}
+        where_clause = ""
+        
+        if search_provider:
+            where_clause = "WHERE provider_name ILIKE :search_term"
+            params["search_term"] = f"%{search_provider.lower()}%"
+        
+        count_query = text(f"SELECT COUNT(*) FROM provider {where_clause}")
+        
+        result = db.execute(count_query, params)
+        total_records = result.scalar()
+        
+        total_pages = (total_records + page_size - 1) // page_size
+        
+        final_query = text(f"""
+            SELECT provider_uuid, deqar_id, eter_id, provider_name
+            FROM provider
+            {where_clause}
+            LIMIT :limit OFFSET :offset
+        """)
+        
+        params["limit"] = page_size
+        params["offset"] = offset
+        
+        rows = db.execute(final_query, params).fetchall()
+        providers = []
+        
+        for row in rows:
+            providers.append({
+                "provider_uuid": str(row[0]),  
+                "deqar_id": row[1],        
+                "eter_id": row[2],
+                "provider_name": row[3],
+            })
+        
+        response = {
+            "response": providers,
+            "total": total_records,
+            "page": page,
+            "page_size": page_size,
+            "total_pages": total_pages
+        }
+        
+        return response
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
+            detail=f"Failed to retrieve providers: {str(e)}"
+        )
+    
+
+@app.get("/get_provider", tags=["Providers"], status_code=status.HTTP_200_OK)
+async def get_provider(
+    provider_uuid: UUID = Query(..., title="Provider UUID"),
+    db: Session = Depends(get_db)
+) -> Dict[str, Any]:
+    try:
+        provider_query = text("""
+            SELECT provider_uuid, deqar_id, eter_id, metadata, manifest_json, name_concat, 
+                   provider_name, last_deqar_pull, last_manifest_pull, created_at, updated_at
+            FROM provider
+            WHERE provider_uuid = :provider_uuid
+        """)
+        
+        provider_result = db.execute(provider_query, {"provider_uuid": provider_uuid}).fetchone()
+        
+        if not provider_result:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Provider not found"
+            )
+        
+        source_version_query = text("""
+            SELECT source_version_uuid, provider_uuid, version_date, version_id, 
+                   source_json, source_uuid_json, created_at, updated_at
+            FROM source_version
+            WHERE provider_uuid = :provider_uuid
+            ORDER BY version_date DESC, version_id DESC
+            LIMIT 1
+        """)
+        
+        source_version_result = db.execute(source_version_query, {"provider_uuid": provider_uuid}).fetchone()
+        
+        response = {
+            "provider": {
+                "provider_uuid": str(provider_result[0]),
+                "deqar_id": provider_result[1],
+                "eter_id": provider_result[2],
+                "metadata": provider_result[3],
+                "manifest_json": provider_result[4],
+                "name_concat": provider_result[5],
+                "provider_name": provider_result[6],
+                "last_deqar_pull": provider_result[7].isoformat() if provider_result[7] else None,
+                "last_manifest_pull": provider_result[8].isoformat() if provider_result[8] else None,
+                "created_at": provider_result[9].isoformat() if provider_result[9] else None,
+                "updated_at": provider_result[10].isoformat() if provider_result[10] else None
+            },
+            "source_version": None,
+            "sources": []
+        }
+        
+        if source_version_result:
+            source_version_uuid = source_version_result[0]
+            
+            response["source_version"] = {
+                "source_version_uuid": str(source_version_uuid),
+                "provider_uuid": str(source_version_result[1]),
+                "version_date": source_version_result[2].isoformat() if source_version_result[2] else None,
+                "version_id": source_version_result[3],
+                "source_json": source_version_result[4],
+                "source_uuid_json": source_version_result[5],
+                "created_at": source_version_result[6].isoformat() if source_version_result[6] else None,
+                "updated_at": source_version_result[7].isoformat() if source_version_result[7] else None
+            }
+            
+            sources_query = text("""
+                SELECT source_uuid, source_version_uuid, source_path, source_type, 
+                       source_version, created_at, updated_at
+                FROM source
+                WHERE source_version_uuid = :source_version_uuid
+            """)
+            
+            sources_result = db.execute(sources_query, {"source_version_uuid": source_version_uuid}).fetchall()
+            
+            for source in sources_result:
+                response["sources"].append({
+                    "source_uuid": str(source[0]),
+                    "source_version_uuid": str(source[1]),
+                    "source_path": source[2],
+                    "source_type": source[3],
+                    "source_version": source[4],
+                    "created_at": source[5].isoformat() if source[5] else None,
+                    "updated_at": source[6].isoformat() if source[6] else None
+                })
+        
+        return response
+        
+    except HTTPException as http_exc:
+        raise http_exc
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to retrieve provider: {str(e)}"
+        )
+
+
+@app.post("/pull_manifest", tags=["Providers"])
+async def pull_manifest(
+    provider_uuid: UUID = Query(..., title="Provider UUID"),
+    background_tasks: BackgroundTasks = BackgroundTasks(),
+    db: Session = Depends(get_db)
+) -> Dict[str, Any]:
+    lock_uuid = str(uuid.uuid4())
+    lock_key_pattern = f"pull_manifest:{provider_uuid}:*"
+    lock_key = f"pull_manifest:{provider_uuid}:{lock_uuid}"
+    
+    try:
+        existing_locks = redis_client.keys(lock_key_pattern)
+        
+        if existing_locks:
+            return JSONResponse(
+                status_code=423,
+                content={
+                    "status": "busy",
+                    "message": "This provider is currently being processed. Please try again later.",
+                    "provider_uuid": str(provider_uuid)
+                }
+            )
+        
+        redis_client.setex(lock_key, 60, "locked")
+        
+        query = text("""
+            SELECT metadata
+            FROM provider
+            WHERE provider_uuid = :provider_uuid
+        """)
+        result = db.execute(query, {"provider_uuid": provider_uuid}).fetchone()
+        if not result:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Provider not found"
+            )
+        metadata = result[0]
+        identifiers = metadata.get("identifiers", [])
+        schac_identifier = next(
+            (item["identifier"] for item in identifiers if item.get("resource") == "SCHAC"),
+            None
+        )
+        if not schac_identifier:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="SCHAC identifier not found in metadata"
+            )
+        domain = schac_identifier.replace("https://", "").replace("http://", "").rstrip("/")
+        base_url = f"https://{domain}"
+        try:
+            response = requests.get(base_url, timeout=10)
+            response.raise_for_status()
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"Failed to fetch homepage: {str(e)}"
+            )
+        soup = BeautifulSoup(response.text, "html.parser")
+        hrefs = [a.get("href") for a in soup.find_all("a", href=True)]
+        known_types = [
+            ".well-known",
+            "DNS",
+        ]
+        manifest_json = []
+        manifest_url = None
+        manifest_found = False
+        manifest_data = None
+        for t in known_types:
+            found_link = next((h for h in hrefs if t in h), None)
+            domain_value = None
+            if found_link:
+                full_url = found_link if found_link.startswith("http") else f"{base_url.rstrip('/')}/{found_link.lstrip('/')}"
+                domain_value = full_url.split("/")[-1]
+                if t == ".well-known":
+                    try:
+                        manifest_resp = requests.get(full_url, timeout=10)
+                        if manifest_resp.status_code == 200 and manifest_resp.headers.get("content-type", "").startswith("application/json"):
+                            manifest_found = True
+                            manifest_url = full_url
+                            manifest_data = manifest_resp.json()
+                    except Exception:
+                        pass
+            manifest_json.append({
+                "type": t,
+                "domain": domain_value
+            })
+        update_query = text("""
+            UPDATE provider
+            SET manifest_json = CAST(:manifest_json AS jsonb),
+                last_manifest_pull = NOW()
+            WHERE provider_uuid = :provider_uuid
+        """)
+        db.execute(update_query, {
+            "manifest_json": json.dumps(manifest_json),
+            "provider_uuid": str(provider_uuid)
+        })
+        
+        sources_processed = False
+        new_source_version_created = False
+        
+        if manifest_found and manifest_data and "sources" in manifest_data:
+            sources = manifest_data["sources"]
+            
+            if sources:
+                sources_processed = True
+                
+                latest_version_query = text("""
+                    SELECT source_version_uuid, version_date, version_id, source_json
+                    FROM source_version
+                    WHERE provider_uuid = :provider_uuid
+                    ORDER BY version_date DESC, version_id DESC
+                    LIMIT 1
+                """)
+                
+                latest_version = db.execute(latest_version_query, {
+                    "provider_uuid": provider_uuid
+                }).fetchone()
+                
+                create_new_version = True
+                if latest_version:
+                    existing_source_json = latest_version[3]
+                    
+                    if json.dumps(existing_source_json, sort_keys=True) == json.dumps(sources, sort_keys=True):
+                        create_new_version = False
+                
+                if create_new_version:
+                    today = date.today().isoformat()
+                    
+                    version_id = 1
+                    if latest_version and latest_version[1].isoformat() == today:
+                        version_id = latest_version[2] + 1
+                    
+                    source_uuid_json = []
+                    for source in sources:
+                        source_with_uuid = source.copy()
+                        source_with_uuid["source_uuid"] = str(uuid.uuid4())
+                        source_uuid_json.append(source_with_uuid)
+                    
+                    insert_version_query = text("""
+                        INSERT INTO source_version
+                        (provider_uuid, version_date, version_id, source_json, source_uuid_json)
+                        VALUES
+                        (:provider_uuid, :version_date, :version_id, CAST(:source_json AS jsonb), CAST(:source_uuid_json AS jsonb))
+                        RETURNING source_version_uuid
+                    """)
+                    
+                    new_version_result = db.execute(insert_version_query, {
+                        "provider_uuid": provider_uuid,
+                        "version_date": today,
+                        "version_id": version_id,
+                        "source_json": json.dumps(sources),
+                        "source_uuid_json": json.dumps(source_uuid_json)
+                    }).fetchone()
+                    
+                    source_version_uuid = new_version_result[0]
+                    
+                    if source_version_uuid and source_uuid_json:
+                        source_records = []
+                        
+                        for source_item in source_uuid_json:
+                            source_uuid_val = source_item.get("source_uuid")
+                            source_path_val = source_item.get("path")
+                            source_type_val = source_item.get("type")
+                            source_version_val = source_item.get("version")
+                            
+                            if source_uuid_val and source_path_val and source_type_val:
+                                source_records.append({
+                                    "source_uuid": source_uuid_val,
+                                    "source_version_uuid": source_version_uuid,
+                                    "source_path": source_path_val,
+                                    "source_type": source_type_val,
+                                    "source_version": source_version_val
+                                })
+                        
+                        if source_records:
+                            insert_sources_query = text("""
+                                INSERT INTO source
+                                (source_uuid, source_version_uuid, source_path, source_type, source_version)
+                                VALUES
+                                (:source_uuid, :source_version_uuid, :source_path, :source_type, :source_version)
+                            """)
+                            
+                            db.execute(insert_sources_query, source_records)
+                    
+                    new_source_version_created = True
+        
+        db.commit()
+        response_data = {
+            "status": "success",
+            "provider_uuid": str(provider_uuid),
+            "domain": domain,
+            "manifest_url": manifest_url,
+            "manifest_found": manifest_found,
+            "manifest_json": manifest_json,
+            "sources_processed": sources_processed,
+            "new_source_version_created": new_source_version_created
+        }
+        
+        return response_data
+    except HTTPException as http_exc:
+        db.rollback()
+        raise http_exc
+    except redis.RedisError as redis_err:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Redis error: {str(redis_err)}"
+        )
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Unexpected error: {str(e)}"
+        )
+    finally:
+        background_tasks.add_task(redis_client.delete, lock_key)
+
+
+@app.post("/populate_sample_data", tags=["Admin"], status_code=status.HTTP_201_CREATED)
+async def populate_sample_data(db: Session = Depends(get_db)) -> Dict[str, Any]:
+    try:
+        sample_providers = [
+            {
+                "deqar_id": "DEQARINST0005",
+                "eter_id": 5,
+                "metadata": {
+                    "id": 5,
+                    "city": ["Vienna"],
+                    "names": [
+                        {
+                            "acronym": "TU Wien",
+                            "name_english": "Vienna University of Technology",
+                            "name_official": "Technische Universität Wien",
+                            "name_valid_to": None,
+                            "name_versions": [],
+                            "name_official_transliterated": ""
+                        }
+                    ],
+                    "country": ["Austria"],
+                    "eter_id": "AT0005",
+                    "part_of": [],
+                    "deqar_id": "DEQARINST0005",
+                    "includes": [],
+                    "locations": [
+                        {
+                            "lat": None,
+                            "city": "Vienna",
+                            "long": None,
+                            "country": {
+                                "id": None,
+                                "name_english": "Austria",
+                                "ehea_is_member": True,
+                                "iso_3166_alpha2": "AT",
+                                "iso_3166_alpha3": "AUT"
+                            },
+                            "country_valid_to": None,
+                            "country_verified": True,
+                            "country_valid_from": "1872-01-01"
+                        }
+                    ],
+                    "permalink": "https://www.testzone.eqar.eu/qa-results/search/by-institution/institution/?id=5",
+                    "identifiers": [
+                        {
+                            "agency": None,
+                            "resource": "ROR",
+                            "identifier": "https://ror.org/04d836q62"
+                        },
+                        {
+                            "agency": None,
+                            "resource": "Erasmus",
+                            "identifier": "A WIEN02"
+                        },
+                        {
+                            "agency": None,
+                            "resource": "SCHAC",
+                            "identifier": "at0005-ql-dev.test.36ada.eu"
+                        },
+                        {
+                            "agency": None,
+                            "resource": "Erasmus-Charter",
+                            "identifier": "E10209415"
+                        },
+                        {
+                            "agency": None,
+                            "resource": "EU-PIC",
+                            "identifier": "999979888"
+                        },
+                        {
+                            "agency": None,
+                            "resource": "EU-VAT",
+                            "identifier": "ATU37675002"
+                        },
+                        {
+                            "agency": None,
+                            "resource": "WHED",
+                            "identifier": "IAU-016256"
+                        }
+                    ],
+                    "closure_date": None,
+                    "date_created": "2025-01-01T00:00:00Z",
+                    "name_primary": "Vienna University of Technology",
+                    "website_link": "https://at0005-ql-dev.test.36ada.eu/",
+                    "founding_date": "1872-01-01",
+                    "qf_ehea_levels": [
+                        "third cycle",
+                        "second cycle",
+                        "first cycle",
+                        "short cycle"
+                    ],
+                    "is_other_provider": False,
+                    "organization_type": "higher education institution"
+                },
+                "manifest_json": [
+                    {
+                        "type": ".well-known",
+                        "domain": "quality-link-manifest.json"
+                    },
+                    {
+                        "type": "DNS",
+                        "domain": None
+                    }
+                ],
+                "name_concat": "DEMO_1",
+                "provider_name": "DEMO_1"
+            },
+            {
+                "deqar_id": "DEQARINST2000",
+                "eter_id": 2000,
+                "metadata": {
+                    "id": 2000,
+                    "city": ["Gdańsk"],
+                    "names": [
+                        {
+                            "acronym": "WSB Merito University Gdańsk",
+                            "name_english": "WSB Merito University Gdańsk",
+                            "name_official": "Uniwersytet WSB Merito w Gdańsku",
+                            "name_valid_to": None,
+                            "name_versions": [
+                                {
+                                    "name": "Gdańsk School of Banking (Wyższa Szkoła Bankowa w Gdańsku)",
+                                    "valid_to": "2023-12-31"
+                                },
+                                {
+                                    "name": "Gdańsk School of Banking (Wyższa Szkoła Bankowa w Gdańsku)",
+                                    "valid_to": "2013-06-30"
+                                }
+                            ],
+                            "name_official_transliterated": ""
+                        }
+                    ],
+                    "country": ["Poland"],
+                    "eter_id": "PL0247",
+                    "part_of": ["WSB Universities (consortium since 2005)"],
+                    "deqar_id": "DEQARINST2000",
+                    "includes": [],
+                    "locations": [
+                        {
+                            "lat": None,
+                            "city": "Gdańsk",
+                            "long": None,
+                            "country": {
+                                "id": None,
+                                "name_english": "Poland",
+                                "ehea_is_member": True,
+                                "iso_3166_alpha2": "PL",
+                                "iso_3166_alpha3": "POL"
+                            },
+                            "country_valid_to": None,
+                            "country_verified": True,
+                            "country_valid_from": "1998-01-01"
+                        },
+                        {
+                            "lat": None,
+                            "city": "Warszawa",
+                            "long": None,
+                            "country": {
+                                "id": None,
+                                "name_english": "Poland",
+                                "ehea_is_member": True,
+                                "iso_3166_alpha2": "PL",
+                                "iso_3166_alpha3": "POL"
+                            },
+                            "country_valid_to": None,
+                            "country_verified": True,
+                            "country_valid_from": "1998-01-01"
+                        },
+                        {
+                            "lat": None,
+                            "city": "Szczecin",
+                            "long": None,
+                            "country": {
+                                "id": None,
+                                "name_english": "Poland",
+                                "ehea_is_member": True,
+                                "iso_3166_alpha2": "PL",
+                                "iso_3166_alpha3": "POL"
+                            },
+                            "country_valid_to": None,
+                            "country_verified": True,
+                            "country_valid_from": "1998-01-01"
+                        },
+                        {
+                            "lat": None,
+                            "city": "Opole",
+                            "long": None,
+                            "country": {
+                                "id": None,
+                                "name_english": "Poland",
+                                "ehea_is_member": True,
+                                "iso_3166_alpha2": "PL",
+                                "iso_3166_alpha3": "POL"
+                            },
+                            "country_valid_to": None,
+                            "country_verified": True,
+                            "country_valid_from": "1998-01-01"
+                        },
+                        {
+                            "lat": None,
+                            "city": "Chorzów",
+                            "long": None,
+                            "country": {
+                                "id": None,
+                                "name_english": "Poland",
+                                "ehea_is_member": True,
+                                "iso_3166_alpha2": "PL",
+                                "iso_3166_alpha3": "POL"
+                            },
+                            "country_valid_to": None,
+                            "country_verified": True,
+                            "country_valid_from": "1998-01-01"
+                        },
+                        {
+                            "lat": None,
+                            "city": "Bydgoszcz",
+                            "long": None,
+                            "country": {
+                                "id": None,
+                                "name_english": "Poland",
+                                "ehea_is_member": True,
+                                "iso_3166_alpha2": "PL",
+                                "iso_3166_alpha3": "POL"
+                            },
+                            "country_valid_to": None,
+                            "country_verified": True,
+                            "country_valid_from": "1998-01-01"
+                        }
+                    ],
+                    "permalink": "https://www.testzone.eqar.eu/qa-results/search/by-institution/institution/?id=2000",
+                    "identifiers": [
+                        {
+                            "agency": None,
+                            "resource": "ROR",
+                            "identifier": "https://ror.org/01arx1p46"
+                        },
+                        {
+                            "agency": None,
+                            "resource": "PL-ETER.BAS.NATID",
+                            "identifier": "19162738600000"
+                        },
+                        {
+                            "agency": None,
+                            "resource": "Erasmus",
+                            "identifier": "PL GDANSK08"
+                        },
+                        {
+                            "agency": None,
+                            "resource": "SCHAC",
+                            "identifier": "pl0247-ql-dev.test.36ada.eu"
+                        },
+                        {
+                            "agency": None,
+                            "resource": "Erasmus-Charter",
+                            "identifier": "E10078430"
+                        },
+                        {
+                            "agency": None,
+                            "resource": "EU-PIC",
+                            "identifier": "949208245"
+                        },
+                        {
+                            "agency": None,
+                            "resource": "EU-VAT",
+                            "identifier": "PL5832558844"
+                        }
+                    ],
+                    "closure_date": None,
+                    "date_created": "2025-01-01T00:00:00Z",
+                    "name_primary": "WSB Merito University Gdańsk",
+                    "website_link": "https://pl0247-ql-dev.test.36ada.eu/",
+                    "founding_date": "1998-01-01",
+                    "qf_ehea_levels": [
+                        "other",
+                        "second cycle",
+                        "first cycle"
+                    ],
+                    "is_other_provider": False,
+                    "organization_type": "higher education institution"
+                },
+                "manifest_json": [
+                    {
+                        "type": ".well-known",
+                        "domain": "quality-link-manifest.json"
+                    },
+                    {
+                        "type": "DNS",
+                        "domain": None
+                    }
+                ],
+                "name_concat": "DEMO_2",
+                "provider_name": "DEMO_2"
+            }
+        ]
+        
+        for provider in sample_providers:
+            check_query = text("SELECT 1 FROM provider WHERE deqar_id = :deqar_id")
+            result = db.execute(check_query, {"deqar_id": provider["deqar_id"]}).fetchone()
+            
+            if not result:
+                insert_query = text("""
+                    INSERT INTO provider
+                    (deqar_id, eter_id, metadata, manifest_json, name_concat, provider_name)
+                    VALUES
+                    (:deqar_id, :eter_id, CAST(:metadata AS JSONB), CAST(:manifest_json AS JSONB), :name_concat, :provider_name)
+                    RETURNING provider_uuid
+                """)
+                
+                result = db.execute(insert_query, {
+                    "deqar_id": provider["deqar_id"],
+                    "eter_id": provider["eter_id"],
+                    "metadata": json.dumps(provider["metadata"]),
+                    "manifest_json": json.dumps(provider["manifest_json"]),
+                    "name_concat": provider["name_concat"],
+                    "provider_name": provider["provider_name"]
+                }).fetchone()
+        
+        db.commit()
+        
+        return {
+            "status": "success",
+            "message": "Sample data inserted successfully"
+        }
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to populate sample data: {str(e)}"
+        )
+
+
+@app.get("/list_datalake_files", tags=["Datalake"], status_code=status.HTTP_200_OK)
+async def list_datalake_files(
+    provider_uuid: UUID = Query(..., title="Provider UUID"),
+    source_version_uuid: UUID = Query(..., title="Source Version UUID"),
+    source_uuid: UUID = Query(..., title="Source UUID"),
+    date: Optional[str] = Query(None, title="Date in YYYY-MM-DD format", regex=r"^\d{4}-\d{2}-\d{2}$|^$"),
+    db: Session = Depends(get_db)
+) -> Dict[str, Any]:
+    try:
+        minio_client = None
+        try:
+            minio_client = Minio(
+                MINIO_ENDPOINT,
+                access_key=MINIO_KEY,
+                secret_key=MINIO_SECRET,
+                secure=False  
+            )
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to connect to MinIO: {str(e)}"
+            )
+        
+        date_folder = None
+        date_source = "provided"
+        
+        if date:
+            try:
+                parsed_date = datetime.strptime(date, "%Y-%m-%d")
+                date_folder = parsed_date.strftime("%Y-%m-%d")
+            except ValueError:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid date format. Please use YYYY-MM-DD format."
+                )
+        else:
+            manifest_path = f"datalake/{provider_uuid}/{source_version_uuid}/{source_uuid}/source_manifest.json"
+            try:
+                data = minio_client.get_object(BUCKET_NAME, manifest_path)
+                manifest_content = data.read().decode('utf-8')
+                manifest = json.loads(manifest_content)
+                
+                if "latest_date" in manifest and manifest["latest_date"]:
+                    date_folder = manifest["latest_date"]
+                    date = date_folder  
+                    date_source = "manifest"
+                else:
+                    raise HTTPException(
+                        status_code=status.HTTP_404_NOT_FOUND,
+                        detail="No latest date found in manifest file"
+                    )
+                    
+            except S3Error as e:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"Failed to retrieve manifest file: {str(e)}"
+                )
+            except json.JSONDecodeError as e:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"Failed to parse manifest file: {str(e)}"
+                )
+        
+        if not date_folder:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No date could be determined. Please provide a date or ensure manifest contains a latest_date."
+            )
+        
+        prefix = f"datalake/{provider_uuid}/{source_version_uuid}/{source_uuid}/{date_folder}/"
+        
+        try:
+            objects = minio_client.list_objects(BUCKET_NAME, prefix=prefix, recursive=True)
+            file_list = []
+            
+            for obj in objects:
+                file_path = obj.object_name
+                filename = file_path.split('/')[-1]
+                file_list.append({
+                    "full_path": file_path,
+                    "filename": filename,
+                    "size": obj.size,
+                    "last_modified": obj.last_modified.isoformat()
+                })
+            
+            if not file_list:
+                return {
+                    "status": "success",
+                    "message": "No files found for the specified parameters",
+                    "params": {
+                        "provider_uuid": str(provider_uuid),
+                        "source_version_uuid": str(source_version_uuid),
+                        "source_uuid": str(source_uuid),
+                        "date": date,
+                        "date_source": date_source
+                    },
+                    "files": [],
+                    "count": 0
+                }
+            
+            sorted_files = sorted(file_list, key=lambda x: x["filename"])
+            
+            return {
+                "status": "success",
+                "message": "Files retrieved successfully",
+                "params": {
+                    "provider_uuid": str(provider_uuid),
+                    "source_version_uuid": str(source_version_uuid),
+                    "source_uuid": str(source_uuid),
+                    "date": date,
+                    "date_source": date_source
+                },
+                "files": sorted_files,
+                "count": len(sorted_files)
+            }
+            
+        except S3Error as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"MinIO error when listing files: {str(e)}"
+            )
+            
+    except HTTPException as http_exc:
+        raise http_exc
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to list datalake files: {str(e)}"
+        )
+
+
+@app.get("/download_datalake_file", tags=["Datalake"])
+async def download_datalake_file(
+    file_path: str = Query(..., title="Full path of file to download"),
+    preview: bool = Query(False, title="If true, preview the file instead of downloading"),
+    db: Session = Depends(get_db)
+) -> Any:
+    try:
+        minio_client = None
+        try:
+            minio_client = Minio(
+                MINIO_ENDPOINT,
+                access_key=MINIO_KEY,
+                secret_key=MINIO_SECRET,
+                secure=False  
+            )
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to connect to MinIO: {str(e)}"
+            )
+        
+        file_name = file_path.split("/")[-1]
+        
+        try:
+            response = minio_client.get_object(BUCKET_NAME, file_path)
+            
+            file_data = response.read()
+            
+            content_type = "application/octet-stream"  
+            if file_name.endswith(".rdf"):
+                content_type = "application/rdf+xml"
+            elif file_name.endswith(".json"):
+                content_type = "application/json"
+            elif file_name.endswith(".xml"):
+                content_type = "application/xml"
+            elif file_name.endswith(".ttl"):
+                content_type = "text/turtle"
+            
+            file_stream = io.BytesIO(file_data)
+            
+            headers = {
+                "Content-Type": content_type,
+            }
+            
+            if not preview:
+                headers["Content-Disposition"] = f"attachment; filename={file_name}"
+            else:
+                headers["Content-Disposition"] = f"inline; filename={file_name}"
+            
+            return StreamingResponse(
+                file_stream, 
+                media_type=content_type,
+                headers=headers
+            )
+            
+        except S3Error as e:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"File not found or access denied: {str(e)}"
+            )
+            
+    except HTTPException as http_exc:
+        raise http_exc
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to download file: {str(e)}"
+        )
+
+        
+@app.post("/queue_provider_data", tags=["Datalake"], status_code=status.HTTP_202_ACCEPTED)
+async def queue_provider_data(
+    provider_uuid: UUID = Query(..., title="Provider UUID"),
+    source_version_uuid: UUID = Query(..., title="Source Version UUID"),
+    source_uuid: UUID = Query(..., title="Source UUID"),
+    source_path: str = Query(..., title="Source Path"),
+    db: Session = Depends(get_db)
+) -> Dict[str, Any]:
+    try:
+        provider_data = {
+            "provider_uuid": str(provider_uuid),
+            "source_version_uuid": str(source_version_uuid),
+            "source_uuid": str(source_uuid),
+            "source_path": source_path,
+            "queued_at": datetime.utcnow().isoformat(),
+            "status": "queued"
+        }
+        
+        queue_name = "provider_data_queue"
+        
+        try:
+            data_json = json.dumps(provider_data)
+            
+            redis_client.rpush(queue_name, data_json)
+            
+            return {
+                "status": "success",
+                "message": "Provider data has been queued for processing",
+                "queue": queue_name,
+                "data": {
+                    "provider_uuid": provider_data["provider_uuid"],
+                    "source_version_uuid": provider_data["source_version_uuid"],
+                    "source_uuid": provider_data["source_uuid"],
+                    "source_path": provider_data["source_path"],
+                    "queued_at": provider_data["queued_at"]
+                }
+            }
+            
+        except redis.RedisError as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to queue data: Redis error: {str(e)}"
+            )
+            
+    except HTTPException as http_exc:
+        raise http_exc
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to queue provider data: {str(e)}"
+        )
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
