@@ -1,0 +1,117 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: ${POSTGRES_IMAGE}
+    container_name: ${POSTGRES_CONTAINER_NAME}
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      - "${POSTGRES_PORT}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./00_postgres:/docker-entrypoint-initdb.d
+    restart: unless-stopped
+    command: postgres -c max_connections=100 -c shared_buffers=512MB
+
+
+  dragonfly:
+    image: ${DRAGONFLY_IMAGE}
+    container_name: ${DRAGONFLY_CONTAINER_NAME}
+    command: >
+      --bind=${DRAGONFLY_BIND}
+      --requirepass=${DRAGONFLY_PASSWORD}
+      --maxmemory=0
+      --dir=${DRAGONFLY_DATA_DIR}
+      --dbfilename=${DRAGONFLY_DBNAME}
+      --keys_output_limit=${DRAGONFLY_KEYS_OUTPUT_LIMIT}
+      --dbnum=${DRAGONFLY_DBNUM}
+      --cache_mode=${DRAGONFLY_CACHE_MODE}
+      --hz=${DRAGONFLY_HZ}
+      --snapshot_cron="${DRAGONFLY_SNAPSHOT_CRON}"
+      --primary_port_http_enabled=false
+    ports:
+      - "${DRAGONFLY_PORT}:6379"
+    volumes:
+      - dragonfly_data:${DRAGONFLY_DATA_DIR}
+    restart: unless-stopped
+
+
+  minio:
+    image: ${MINIO_IMAGE}
+    container_name: ${MINIO_CONTAINER_NAME}
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    command: minio server ${MINIO_DATA_DIR} --console-address "0.0.0.0:9001"
+    volumes:
+      - minio_data:${MINIO_DATA_DIR}
+    ports:
+      - "${MINIO_API_PORT}:9000"
+      - "${MINIO_CONSOLE_PORT}:9001"
+    restart: unless-stopped
+
+
+  mageai:
+    build:
+      context: ./03_mage
+      dockerfile: Dockerfile
+      args:
+        BASE_CODE_PATH: ${MAGEAI_BASE_PATH}
+        PROJECT_NAME: ${MAGEAI_PROJECT_NAME}
+    container_name: ${MAGEAI_CONTAINER_NAME}
+    command: mage start ${MAGEAI_PROJECT_NAME}
+    environment:
+      USER_CODE_PATH: ${MAGEAI_BASE_PATH}/${MAGEAI_PROJECT_NAME}
+      MAGE_DATABASE_CONNECTION_URL: ${MAGE_DATABASE_CONNECTION_URL}
+      REDIS_URL: ${MAGEAI_REDIS_URL}
+      REQUIRE_USER_AUTHENTICATION: ${MAGEAI_REQUIRE_AUTH}
+      DEFAULT_OWNER_EMAIL: ${DEFAULT_OWNER_EMAIL}
+      DEFAULT_OWNER_USERNAME: ${DEFAULT_OWNER_USERNAME}
+      DEFAULT_OWNER_PASSWORD: ${DEFAULT_OWNER_PASSWORD}
+    ports:
+      - "${MAGEAI_PORT}:6789"
+    volumes:
+      - mageai_projects:${MAGEAI_BASE_PATH}
+      - mageai_data:${MAGEAI_BASE_PATH}/${MAGEAI_PROJECT_NAME}/mage_data
+    depends_on:
+      - postgres
+      - dragonfly
+      - minio
+    restart: unless-stopped
+
+
+  backend:
+    build:
+      context: ./04_backend
+      dockerfile: Dockerfile
+    container_name: ${BACKEND_CONTAINER_NAME}
+    environment:
+      DB_USER: ${POSTGRES_USER}
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: ${DB_NAME}
+      BACKEND_REDIS_URL: ${BACKEND_REDIS_URL}
+      MINIO_HOST: ${MINIO_HOST}
+      MINIO_KEY: ${MINIO_ROOT_USER}
+      MINIO_SECRET: ${MINIO_ROOT_PASSWORD}
+      BUCKET_NAME: ${BUCKET_NAME}
+    ports:
+      - "${BACKEND_PORT}:8000"
+    depends_on:
+      - postgres
+      - dragonfly
+      - minio
+    restart: unless-stopped
+
+
+volumes:
+  postgres_data:
+  dragonfly_data:
+  minio_data:
+  mageai_projects:
+  mageai_data:
+  
