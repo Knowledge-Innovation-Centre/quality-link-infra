@@ -37,6 +37,7 @@ CREATE TABLE IF NOT EXISTS source_version (
 CREATE TABLE IF NOT EXISTS source (
     source_uuid UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     source_version_uuid UUID NOT NULL,
+    source_name VARCHAR,
     source_path VARCHAR,
     source_type VARCHAR,
     source_version VARCHAR,

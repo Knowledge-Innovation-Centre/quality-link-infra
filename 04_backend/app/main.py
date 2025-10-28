@@ -211,7 +211,7 @@ async def get_provider(
             
             sources_query = text("""
                 SELECT source_uuid, source_version_uuid, source_path, source_type, 
-                       source_version, created_at, updated_at
+                       source_version, created_at, updated_at, source_name
                 FROM source
                 WHERE source_version_uuid = :source_version_uuid
             """)
@@ -222,6 +222,7 @@ async def get_provider(
                 response["sources"].append({
                     "source_uuid": str(source[0]),
                     "source_version_uuid": str(source[1]),
+                    "source_name": source[7]
                     "source_path": source[2],
                     "source_type": source[3],
                     "source_version": source[4],
@@ -404,6 +405,7 @@ async def pull_manifest(
                             source_path_val = source_item.get("path")
                             source_type_val = source_item.get("type")
                             source_version_val = source_item.get("version")
+                            source_name_val = source_item.get("name", "")
                             
                             if source_uuid_val and source_path_val and source_type_val:
                                 source_records.append({
@@ -411,15 +413,16 @@ async def pull_manifest(
                                     "source_version_uuid": source_version_uuid,
                                     "source_path": source_path_val,
                                     "source_type": source_type_val,
-                                    "source_version": source_version_val
+                                    "source_version": source_version_val,
+                                    "source_name": source_name_val
                                 })
                         
                         if source_records:
                             insert_sources_query = text("""
                                 INSERT INTO source
-                                (source_uuid, source_version_uuid, source_path, source_type, source_version)
+                                (source_uuid, source_version_uuid, source_path, source_type, source_version, source_name)
                                 VALUES
-                                (:source_uuid, :source_version_uuid, :source_path, :source_type, :source_version)
+                                (:source_uuid, :source_version_uuid, :source_path, :source_type, :source_version, :source_name)
                             """)
                             
                             db.execute(insert_sources_query, source_records)
