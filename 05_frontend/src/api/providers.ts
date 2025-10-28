@@ -7,6 +7,8 @@ import type {
   GetProviderResponse,
   GetDatalakeFilesParams,
   GetDatalakeFilesResponse,
+  PullManifestParams,
+  PullManifestResponse,
 } from '../types';
 
 /**
@@ -79,6 +81,17 @@ export class ProvidersApi {
       source_version_uuid: params.source_version_uuid,
       source_uuid: params.source_uuid,
     });
+  }
+
+  /**
+   * Pull and refresh the manifest for a provider
+   * @param params - Provider UUID
+   * @returns Promise with pull manifest results
+   */
+  async pullManifest(params: PullManifestParams): Promise<PullManifestResponse> {
+    const endpoint = `${this.basePath}/pull_manifest?provider_uuid=${params.provider_uuid}`;
+
+    return apiClient.post<PullManifestResponse>(endpoint);
   }
 }
 

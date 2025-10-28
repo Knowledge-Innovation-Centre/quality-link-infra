@@ -15,12 +15,14 @@ interface DomainVerificationProps {
   methods: DomainMethod[]
   onRefresh: () => void
   isRefreshing?: boolean
+  isDisabled?: boolean
 }
 
 export default function DomainVerification({
   methods,
   onRefresh,
   isRefreshing = false,
+  isDisabled = false,
 }: DomainVerificationProps) {
   // Get unique domains for the subtitle
   const uniqueDomains = [...new Set(methods.map(m => m.domain))].join(', ')
@@ -143,7 +145,7 @@ export default function DomainVerification({
         <div className="flex items-center gap-8 pt-8 pb-0">
           <button
             onClick={onRefresh}
-            disabled={isRefreshing}
+            disabled={isRefreshing || isDisabled}
             className="bg-brand-base text-white px-5 py-2.5 rounded-lg text-sm font-medium hover:opacity-90 disabled:opacity-50 flex items-center gap-2 transition-opacity"
           >
             <RotateCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />

@@ -189,7 +189,7 @@ export default function DataLake({ files, latestFile, onPreviewJson, onRefresh, 
                           className="bg-white border border-gray-200 text-gray-900 px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-gray-50 flex items-center gap-2 transition-colors"
                         >
                           <Eye className="w-3.5 h-3.5" />
-                          Preview JSON
+                          Preview
                         </button>
                       </div>
                     </td>

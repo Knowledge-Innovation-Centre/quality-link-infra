@@ -161,6 +161,7 @@ export interface Source {
   source_uuid: string
   source_version_uuid: string
   source_path: string
+  source_name?: string
   source_type: string
   source_version: string
   created_at: string
@@ -198,6 +199,21 @@ export interface GetDatalakeFilesResponse {
   }
   files: DatalakeFile[]
   count: number
+}
+
+export interface PullManifestParams {
+  provider_uuid: string
+}
+
+export interface PullManifestResponse {
+  status: string
+  provider_uuid: string
+  domain: string
+  manifest_url: string | null
+  manifest_found: boolean
+  manifest_json: ManifestMethod[]
+  sources_processed: boolean
+  new_source_version_created: boolean
 }
 
 

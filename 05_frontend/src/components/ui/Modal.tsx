@@ -1,7 +1,6 @@
 import { ReactNode, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { X } from 'lucide-react'
-import Button from './Button'
 
 interface ModalProps {
   isOpen: boolean
@@ -9,6 +8,7 @@ interface ModalProps {
   title: string
   children: ReactNode
   size?: 'sm' | 'md' | 'lg' | 'xl'
+  footerActions?: ReactNode
 }
 
 const sizeStyles = {
@@ -24,6 +24,7 @@ export default function Modal({
   title,
   children,
   size = 'lg',
+  footerActions,
 }: ModalProps) {
   // Close on escape key
   useEffect(() => {
@@ -71,11 +72,11 @@ export default function Modal({
               className={`bg-white rounded-lg shadow-2xl w-full ${sizeStyles[size]} max-h-[90vh] flex flex-col`}
             >
               {/* Header */}
-              <div className="flex items-center justify-between px-8 py-6 border-b border-gray-200">
-                <h2 className="text-2xl font-bold text-gray-900">{title}</h2>
+              <div className="flex items-center justify-between px-8 py-6">
+                {title && <h2 className="text-lg font-semibold text-gray-500 leading-[1.25]">{title}</h2>}
                 <button
                   onClick={onClose}
-                  className="text-gray-400 hover:text-gray-600 transition-colors"
+                  className={`text-gray-400 hover:text-gray-600 transition-colors ${!title ? 'ml-auto' : ''}`}
                   aria-label="Close modal"
                 >
                   <X className="w-6 h-6" />
@@ -88,11 +89,11 @@ export default function Modal({
               </div>
 
               {/* Footer */}
-              <div className="flex justify-end gap-3 px-8 py-6 border-t border-gray-200">
-                <Button variant="outline" onClick={onClose}>
-                  Close
-                </Button>
-              </div>
+              {footerActions && (
+                <div className="flex justify-start items-center gap-3 px-8 py-6 border-t border-gray-200">
+                  {footerActions}
+                </div>
+              )}
             </motion.div>
           </div>
         </>
