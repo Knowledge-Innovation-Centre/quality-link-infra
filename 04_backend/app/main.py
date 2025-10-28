@@ -222,7 +222,7 @@ async def get_provider(
                 response["sources"].append({
                     "source_uuid": str(source[0]),
                     "source_version_uuid": str(source[1]),
-                    "source_name": source[7]
+                    "source_name": source[7],
                     "source_path": source[2],
                     "source_type": source[3],
                     "source_version": source[4],
