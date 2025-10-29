@@ -4,7 +4,7 @@ interface NavbarProps {
   showActions?: boolean
 }
 
-export default function Navbar({ showActions = true }: NavbarProps) {
+export default function Navbar({ showActions = false }: NavbarProps) {
   return (
     <nav className="bg-primary text-white shadow-md">
       <div className="max-w-10xl mx-auto px-4 sm:px-6 lg:px-8">
