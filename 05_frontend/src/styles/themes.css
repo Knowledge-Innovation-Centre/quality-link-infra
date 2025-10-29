@@ -1,0 +1,69 @@
+/* Base theme variables */
+:root {
+  /* Turquoise/Skilldata theme (default) */
+  --color-primary: 31 120 189; /* #1f78bd */
+  --color-primary-dark: 11 34 59; /* #0b223b */
+  --color-brand-50: 242 249 253; /* #f2f9fd */
+  --color-brand-100: 229 241 249; /* #e5f1f9 */
+  --color-brand-200: 203 227 243; /* #cbe3f3 */
+  --color-brand-300: 160 207 233; /* #a0cfe9 */
+  --color-brand-400: 110 180 220; /* #6eb4dc */
+  --color-brand-base: 80 178 218; /* #50b2da - Turquoise */
+  --color-brand-600: 32 124 169; /* #207ca9 */
+  --color-brand-700: 24 101 136; /* #186588 */
+  --color-brand-800: 19 83 112; /* #135370 */
+  --color-brand-900: 18 46 63; /* #122e3f */
+  
+  /* Footer gradient (turquoise theme) */
+  --footer-gradient: radial-gradient(circle at 95% 50%, 
+    rgba(0,154,215,1) 0%, 
+    rgba(12,141,206,1) 25%, 
+    rgba(23,129,196,1) 50%, 
+    rgba(46,103,177,1) 100%);
+}
+
+/* QualityLink Dark Blue theme */
+[data-theme="qualitylink"] {
+  --color-primary: 11 34 59; /* #0b223b - Dark navy */
+  --color-primary-dark: 8 25 44; /* Darker */
+  --color-brand-50: 238 243 250; /* Light blue-gray */
+  --color-brand-100: 220 233 245; /* #dce9f5 */
+  --color-brand-200: 180 207 230; /* #b4cfe6 */
+  --color-brand-300: 140 181 215; /* #8cb5d7 */
+  --color-brand-400: 100 155 200; /* #649bc8 */
+  --color-brand-base: 31 120 189; /* #1f78bd - Blue */
+  --color-brand-600: 25 96 151; /* #196097 */
+  --color-brand-700: 19 72 113; /* #134871 */
+  --color-brand-800: 13 48 75; /* #0d304b */
+  --color-brand-900: 11 34 59; /* #0b223b - Dark navy */
+  
+  /* Footer gradient (dark blue theme) */
+  --footer-gradient: linear-gradient(135deg, 
+    rgba(11,34,59,1) 0%, 
+    rgba(19,72,113,1) 50%, 
+    rgba(31,120,189,1) 100%);
+}
+
+/* Skilldata/Turquoise theme (explicit) */
+[data-theme="skilldata"] {
+  /* Same as root, but explicit */
+  --color-primary: 31 120 189;
+  --color-primary-dark: 11 34 59;
+  --color-brand-50: 242 249 253;
+  --color-brand-100: 229 241 249;
+  --color-brand-200: 203 227 243;
+  --color-brand-300: 160 207 233;
+  --color-brand-400: 110 180 220;
+  --color-brand-base: 80 178 218; /* #50b2da - Turquoise */
+  --color-brand-600: 32 124 169;
+  --color-brand-700: 24 101 136;
+  --color-brand-800: 19 83 112;
+  --color-brand-900: 18 46 63;
+  
+  --footer-gradient: radial-gradient(circle at 95% 50%, 
+    rgba(0,154,215,1) 0%, 
+    rgba(12,141,206,1) 25%, 
+    rgba(23,129,196,1) 50%, 
+    rgba(46,103,177,1) 100%);
+}
+
