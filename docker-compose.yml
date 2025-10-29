@@ -110,8 +110,8 @@ services:
 
   frontend:
     build:
-      context: ./05_frontend
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: ./05_frontend/Dockerfile
     container_name: ${FRONTEND_CONTAINER_NAME}
     ports:
       - "${FRONTEND_PORT}:3000"
