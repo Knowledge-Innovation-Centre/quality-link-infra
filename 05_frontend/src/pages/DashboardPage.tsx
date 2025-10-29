@@ -19,7 +19,6 @@ export default function DashboardPage() {
   const [isJsonModalOpen, setIsJsonModalOpen] = useState(false)
   const [selectedJson, setSelectedJson] = useState('')
   const [currentFilename, setCurrentFilename] = useState('')
-  const [currentFullPath, setCurrentFullPath] = useState('')
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [isRefreshDisabled, setIsRefreshDisabled] = useState(false)
   const [isDataLakeRefreshing, setIsDataLakeRefreshing] = useState(false)
@@ -228,7 +227,6 @@ export default function DashboardPage() {
   const handleViewJson = async (filename: string, fullPath?: string) => {
     setSelectedJson(filename)
     setCurrentFilename(filename)
-    setCurrentFullPath(fullPath || '')
     setIsJsonModalOpen(true)
 
     if (!fullPath) {

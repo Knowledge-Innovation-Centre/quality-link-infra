@@ -1,4 +1,4 @@
-import { File, Eye, ChevronDown, ChevronUp, HelpCircle, RotateCw, Download } from 'lucide-react'
+import { File, Eye, ChevronDown, HelpCircle, RotateCw, Download } from 'lucide-react'
 import { useState, useRef, useEffect } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 
@@ -125,7 +125,7 @@ export default function DataSources({
           </div>
 
           {/* Table Body */}
-          {dataSources.map((source, index) => (
+          {dataSources.map((source) => (
             <div key={source.id}>
               {/* Main Row */}
               <div className={`flex items-center border-t border-gray-200 w-full ${isExpanded(source.id) ? 'bg-gray-50' : 'bg-white'}`}>

@@ -230,7 +230,7 @@ function ToastItem({ toast, onClose }: ToastItemProps) {
                       </div>
                     </div>
                   </div>
-                  {index < toast.changes.length - 1 && (
+                  {index < (toast.changes?.length ?? 0) - 1 && (
                     <div className="border-t border-gray-200 my-2" />
                   )}
                 </div>
