@@ -49,6 +49,8 @@ services:
       - "${DRAGONFLY_PORT}:6379"
     volumes:
       - dragonfly_data:${DRAGONFLY_DATA_DIR}
+    depends_on:
+      - frontend
     restart: unless-stopped
 
 
@@ -64,6 +66,8 @@ services:
     ports:
       - "${MINIO_API_PORT}:9000"
       - "${MINIO_CONSOLE_PORT}:9001"
+    depends_on:
+      - frontend
     restart: unless-stopped
 
 
@@ -93,6 +97,8 @@ services:
       - postgres
       - dragonfly
       - minio
+      - frontend
+      - backend
     restart: unless-stopped
 
 
@@ -118,6 +124,7 @@ services:
       - postgres
       - dragonfly
       - minio
+      - frontend
     restart: unless-stopped
 
 
