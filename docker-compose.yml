@@ -1,6 +1,17 @@
 version: '3.8'
 
 services:
+
+  frontend:
+    build:
+      context: ./05_frontend
+      dockerfile: Dockerfile.frontend
+    container_name: ${FRONTEND_CONTAINER_NAME}
+    ports:
+      - "${FRONTEND_PORT}:3000"
+    restart: unless-stopped
+
+
   postgres:
     image: ${POSTGRES_IMAGE}
     container_name: ${POSTGRES_CONTAINER_NAME}
@@ -14,6 +25,8 @@ services:
       - postgres_data:/var/lib/postgresql/data
       - ./00_postgres:/docker-entrypoint-initdb.d
     restart: unless-stopped
+    depends_on:
+      - frontend
     command: postgres -c max_connections=100 -c shared_buffers=512MB
 
 
@@ -107,15 +120,6 @@ services:
       - minio
     restart: unless-stopped
 
-
-  frontend:
-    build:
-      context: ./05_frontend
-      dockerfile: Dockerfile.frontend
-    container_name: ${FRONTEND_CONTAINER_NAME}
-    ports:
-      - "${FRONTEND_PORT}:3000"
-    restart: unless-stopped
 
 
 volumes:
