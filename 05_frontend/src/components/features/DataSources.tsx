@@ -359,27 +359,6 @@ export default function DataSources({
             </div>
           ))}
         </div>
-
-        {/* Pagination Footer */}
-        <div className="bg-white flex items-center justify-between py-2">
-          <div>
-            <p className="text-sm text-gray-500">
-              Showing <span className="font-semibold text-gray-900">1-{dataSources.length}</span> of{' '}
-              <span className="font-semibold text-gray-900">{dataSources.length}</span>
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <button className="bg-white border border-gray-200 text-turquoise-900 px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-gray-50 transition-colors">
-              Previous
-            </button>
-            <p className="text-xs text-turquoise-900">
-              Page <span className="font-semibold">1</span> of <span className="font-semibold">1</span>
-            </p>
-            <button className="bg-white border border-gray-200 text-turquoise-900 px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-gray-50 transition-colors">
-              Next
-            </button>
-          </div>
-        </div>
       </div>
     </section>
   )
