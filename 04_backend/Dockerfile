@@ -14,7 +14,7 @@ COPY requirements.txt /app/
 RUN pip3 install --no-cache-dir -r requirements.txt
 
 # Copy the FastAPI app's code including the config directory
-COPY ./app /app
+COPY app /app
 
 # Change the working directory to /app/app
 WORKDIR /app
