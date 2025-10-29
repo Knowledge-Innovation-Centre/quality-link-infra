@@ -85,7 +85,7 @@ services:
 
   backend:
     build:
-      context: ./04_backend
+      context: .
       dockerfile: ./04_backend/Dockerfile
     container_name: ${BACKEND_CONTAINER_NAME}
     environment:
@@ -110,7 +110,7 @@ services:
 
   frontend:
     build:
-      context: ./05_frontend
+      context: .
       dockerfile: ./05_frontend/Dockerfile
     container_name: ${FRONTEND_CONTAINER_NAME}
     ports:
