@@ -86,7 +86,7 @@ services:
   backend:
     build:
       context: .
-      dockerfile: ./04_backend/Dockerfile
+      dockerfile: 04_backend/Dockerfile
     container_name: ${BACKEND_CONTAINER_NAME}
     environment:
       DB_USER: ${POSTGRES_USER}
@@ -111,15 +111,10 @@ services:
   frontend:
     build:
       context: .
-      dockerfile: ./05_frontend/Dockerfile
+      dockerfile: 05_frontend/Dockerfile
     container_name: ${FRONTEND_CONTAINER_NAME}
     ports:
       - "${FRONTEND_PORT}:3000"
-    depends_on:
-      - postgres
-      - dragonfly
-      - minio
-      - backend
     restart: unless-stopped
 
 
