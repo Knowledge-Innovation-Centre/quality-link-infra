@@ -108,19 +108,19 @@ services:
     restart: unless-stopped
 
 
-  frontend:
-    build:
-      context: ./05_frontend
-      dockerfile: Dockerfile
-    container_name: ${FRONTEND_CONTAINER_NAME}
-    ports:
-      - "${FRONTEND_PORT}:3000"
-    depends_on:
-      - postgres
-      - dragonfly
-      - minio
-      - backend
-    restart: unless-stopped
+  # frontend:
+  #   build:
+  #     context: ./05_frontend
+  #     dockerfile: Dockerfile
+  #   container_name: ${FRONTEND_CONTAINER_NAME}
+  #   ports:
+  #     - "${FRONTEND_PORT}:3000"
+  #   depends_on:
+  #     - postgres
+  #     - dragonfly
+  #     - minio
+  #     - backend
+  #   restart: unless-stopped
 
 
 volumes:
