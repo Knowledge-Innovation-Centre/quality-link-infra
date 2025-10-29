@@ -85,8 +85,8 @@ services:
 
   backend:
     build:
-      context: .
-      dockerfile: 04_backend/Dockerfile
+      context: ./04_backend
+      dockerfile: Dockerfile
     container_name: ${BACKEND_CONTAINER_NAME}
     environment:
       DB_USER: ${POSTGRES_USER}
