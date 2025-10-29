@@ -86,7 +86,7 @@ services:
   backend:
     build:
       context: ./04_backend
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.backend
     container_name: ${BACKEND_CONTAINER_NAME}
     environment:
       DB_USER: ${POSTGRES_USER}
@@ -110,8 +110,8 @@ services:
 
   frontend:
     build:
-      context: .
-      dockerfile: ./05_frontend/Dockerfile
+      context: ./05_frontend
+      dockerfile: Dockerfile.frontend
     container_name: ${FRONTEND_CONTAINER_NAME}
     ports:
       - "${FRONTEND_PORT}:3000"

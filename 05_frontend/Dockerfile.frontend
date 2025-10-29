@@ -2,7 +2,7 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-COPY ./05_frontend/package.json .
+COPY package.json .
 
 RUN npm install
 
