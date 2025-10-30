@@ -4,7 +4,7 @@ export const API_CONFIG = {
   // In production, use direct API URL
   BASE_URL: import.meta.env.DEV
     ? '/api'
-    : 'https://i08ggsggwokooc84coo4c08o.serverfarm.knowledgeinnovation.eu',
+    : 'http://localhost:8000',
   ENDPOINTS: {
     QUALITY_LINK: '',
   },
