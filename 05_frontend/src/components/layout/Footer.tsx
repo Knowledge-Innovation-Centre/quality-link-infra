@@ -1,4 +1,4 @@
-import ql from "@/assets/images/QualityLink_logo_horizontal-blue.svg";
+import ql from "@/assets/images/QualityLink_logo_horizontal-white.png";
 import eu from "@/assets/images/eu.png";
 
 export default function Footer() {

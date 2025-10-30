@@ -34,10 +34,10 @@ export default function DomainVerification({
           Domain search order
         </h2>
         <p className="text-sm text-gray-500">
-          {methods.length} domains found: {uniqueDomains.split(',').map((domain, i) => (
+          {methods.length} domains found {uniqueDomains.split(',').map((domain, i) => (
             <span key={i}>
               {i > 0 && ', '}
-              <span className="text-gray-900 underline">{domain.trim()}</span>
+              {/* <span className="text-gray-900 underline">{domain.trim()}</span> */}
             </span>
           ))}
         </p>
@@ -132,7 +132,7 @@ export default function DomainVerification({
                       </span>
                     </div>
                     <p className="text-sm text-gray-900">
-                      Found at: <span className="underline">{method.manifestPath}</span>
+                      Found at: <a href={method.manifestPath} target="_blank" rel="noopener noreferrer" className="text-brand-600 underline hover:opacity-80">{method.manifestPath}</a>
                     </p>
                   </motion.div>
                 )}

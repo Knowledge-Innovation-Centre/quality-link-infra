@@ -440,8 +440,8 @@ export default function DashboardPage() {
 
       {/* Main Content */}
       <main className="flex-1 bg-white">
-        <div className="flex flex-col items-center px-20 pt-[60px] pb-20">
-          <div className="max-w-5xl mx-auto space-y-8">
+        <div className="max-w-5xl mx-auto py-16">
+          <div className="space-y-8">
             {/* Known Identifiers */}
             <section>
               <div className="mb-6">
