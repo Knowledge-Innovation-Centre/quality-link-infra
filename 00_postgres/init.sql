@@ -11,7 +11,8 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE TABLE IF NOT EXISTS provider (
     provider_uuid UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     deqar_id VARCHAR,
-    eter_id INTEGER,
+    eter_id VARCHAR,
+    base_id INTEGER,
     metadata JSONB,
     manifest_json JSONB,
     name_concat VARCHAR,
