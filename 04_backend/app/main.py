@@ -843,7 +843,7 @@ async def list_datalake_files(
                     detail="Invalid date format. Please use YYYY-MM-DD format."
                 )
         else:
-            manifest_path = f"datalake/{provider_uuid}/{source_version_uuid}/{source_uuid}/source_manifest.json"
+            manifest_path = f"datalake/courses/{provider_uuid}/{source_version_uuid}/{source_uuid}/source_manifest.json"
             try:
                 data = minio_client.get_object(BUCKET_NAME, manifest_path)
                 manifest_content = data.read().decode('utf-8')
@@ -876,7 +876,7 @@ async def list_datalake_files(
                 detail="No date could be determined. Please provide a date or ensure manifest contains a latest_date."
             )
         
-        prefix = f"datalake/{provider_uuid}/{source_version_uuid}/{source_uuid}/{date_folder}/"
+        prefix = f"datalake/courses/{provider_uuid}/{source_version_uuid}/{source_uuid}/{date_folder}/"
         
         try:
             objects = minio_client.list_objects(BUCKET_NAME, prefix=prefix, recursive=True)
