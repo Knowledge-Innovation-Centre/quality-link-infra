@@ -24,9 +24,6 @@ export default function DomainVerification({
   isRefreshing = false,
   isDisabled = false,
 }: DomainVerificationProps) {
-  // Get unique domains for the subtitle
-  const uniqueDomains = [...new Set(methods.map(m => m.domain))].join(', ')
-
   return (
     <section>
       <div className="mb-8">
@@ -34,12 +31,7 @@ export default function DomainVerification({
           Domain search order
         </h2>
         <p className="text-sm text-gray-500">
-          {methods.length} domains found {uniqueDomains.split(',').map((domain, i) => (
-            <span key={i}>
-              {i > 0 && ', '}
-              {/* <span className="text-gray-900 underline">{domain.trim()}</span> */}
-            </span>
-          ))}
+          {methods.length} domains found
         </p>
       </div>
 
