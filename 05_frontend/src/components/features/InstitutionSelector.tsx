@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import ReCAPTCHA from "react-google-recaptcha";
 import { providersApi } from "../../api";
 import Spinner from "../ui/Spinner";
 import type { Provider } from "../../types";
@@ -18,6 +19,17 @@ export default function InstitutionSelector({ onSelect }: InstitutionSelectorPro
 
   const dropdownRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const recaptchaRef = useRef<ReCAPTCHA>(null);
+
+  const recaptchaSiteKey = import.meta.env.VITE_RECAPTCHA_SITE_KEY || '';
+
+  const handleCaptchaChange = (token: string | null) => {
+    if (token) {
+      setCaptchaVerified(true);
+    } else {
+      setCaptchaVerified(false);
+    }
+  };
 
   // Debounced search effect
   useEffect(() => {
@@ -72,6 +84,7 @@ export default function InstitutionSelector({ onSelect }: InstitutionSelectorPro
 
   const handleSubmit = () => {
     if (selectedProvider && captchaVerified) {
+      // const token = recaptchaRef.current?.getValue();
       onSelect(selectedProvider.provider_uuid);
     }
   };
@@ -100,19 +113,12 @@ export default function InstitutionSelector({ onSelect }: InstitutionSelectorPro
           <p className="text-gray-700 leading-relaxed">This dashboard allows you to check if your education institution's data sources were discovered and harvested by the QualityLink aggregator.</p>
         </div>
 
-        {/* reCAPTCHA placeholder */}
-        <div className="border-2 border-gray-300 rounded-lg p-4 bg-white shadow-sm inline-block">
-          <label className="flex items-center gap-3 cursor-pointer">
-            <div className="relative">
-              <input
-                type="checkbox"
-                checked={captchaVerified}
-                onChange={(e) => setCaptchaVerified(e.target.checked)}
-                className="w-6 h-6 rounded border-2 border-gray-400 cursor-pointer accent-turquoise-base hover:border-turquoise-base transition-colors"
-              />
-            </div>
-            <span className="text-gray-800 font-medium select-none">I'm not a robot</span>
-          </label>
+        <div className="flex justify-start">
+          <ReCAPTCHA
+            ref={recaptchaRef}
+            sitekey={recaptchaSiteKey}
+            onChange={handleCaptchaChange}
+          />
         </div>
 
         <div className="flex flex-col gap-3">
