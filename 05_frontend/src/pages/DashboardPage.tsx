@@ -41,28 +41,6 @@ export default function DashboardPage() {
         setProviderError(null)
         const response = await providersApi.getProvider({ provider_uuid: providerUuid })
         setProviderData(response)
-
-        // Fetch datalake files for each source
-        const filesPromises = response.sources.map(async (source) => {
-          try {
-            const filesResponse = await providersApi.getDatalakeFiles({
-              provider_uuid: response.provider.provider_uuid,
-              source_version_uuid: response.source_version.source_version_uuid,
-              source_uuid: source.source_uuid,
-            })
-            return { sourceUuid: source.source_uuid, files: filesResponse.files }
-          } catch (err) {
-            console.error(`Error fetching datalake files for source ${source.source_uuid}:`, err)
-            return { sourceUuid: source.source_uuid, files: [] }
-          }
-        })
-
-        const filesResults = await Promise.all(filesPromises)
-        const filesMap: Record<string, DatalakeFile[]> = {}
-        filesResults.forEach(result => {
-          filesMap[result.sourceUuid] = result.files
-        })
-        setDatalakeFiles(filesMap)
       } catch (err) {
         setProviderError(err instanceof Error ? err.message : 'Failed to fetch provider data')
         console.error('Error fetching provider:', err)
@@ -180,48 +158,96 @@ export default function DashboardPage() {
     }
   }
 
-  const handleRefreshDataLake = () => {
+  const handleExpandDataSource = async (sourceUuid: string, sourcePath: string) => {
+    if (!providerData) return
+
+    // Check if we already have files for this source
+    if (datalakeFiles[sourceUuid]) return
+
+    try {
+      const filesResponse = await providersApi.getDatalakeFiles({
+        provider_uuid: providerData.provider.provider_uuid,
+        source_version_uuid: providerData.source_version.source_version_uuid,
+        source_uuid: sourceUuid,
+        source_path: sourcePath,
+      })
+
+      setDatalakeFiles(prev => ({
+        ...prev,
+        [sourceUuid]: filesResponse.files
+      }))
+    } catch (error) {
+      console.error(`Error fetching datalake files for source ${sourceUuid}:`, error)
+      showToast({
+        type: 'error',
+        title: 'Failed to load files',
+        message: error instanceof Error ? error.message : 'Could not fetch datalake files',
+      })
+    }
+  }
+
+  const handleRefreshDataLake = async (sourceUuid: string, sourcePath: string) => {
+    if (!providerData) return
+
     setIsDataLakeRefreshing(true)
     const loadingToastId = showToast({
       type: 'loading',
-      title: 'Refreshing...',
-      message: 'Fetching latest files from data sources...',
+      title: 'Queueing data fetch...',
+      message: 'Requesting data source refresh...',
       isLoading: true,
       showProgress: true,
       progress: 0,
     })
-    
-    // Simulate API call with progress updates
+
     let progress = 0
     let hasCompleted = false
-    
+
     const progressInterval = setInterval(() => {
       if (hasCompleted) return
-      
+
       if (progress < 90) {
         progress += Math.random() * 15
-        if (progress > 90) progress = 90 // Cap at 90%
+        if (progress > 90) progress = 90
         updateToast(loadingToastId, { progress })
-      } else if (progress >= 90 && !hasCompleted) {
-        hasCompleted = true
-        clearInterval(progressInterval)
-        
-        // Complete to 100%
-        progress = 100
-        updateToast(loadingToastId, { progress })
-        
-        // Wait a moment, then transform to success view
-        setTimeout(() => {
-          setIsDataLakeRefreshing(false)
-          updateToast(loadingToastId, {
-            isLoading: false,
-            isComplete: true,
-            title: 'Refresh complete',
-            message: 'Data sources refreshed successfully',
-          })
-        }, 500)
       }
     }, 200)
+
+    try {
+      // Queue the data source for fetching
+      await providersApi.queueProviderData({
+        provider_uuid: providerData.provider.provider_uuid,
+        source_version_uuid: providerData.source_version.source_version_uuid,
+        source_uuid: sourceUuid,
+        source_path: sourcePath,
+      })
+
+      // Complete progress
+      hasCompleted = true
+      clearInterval(progressInterval)
+      progress = 100
+      updateToast(loadingToastId, { progress })
+
+      setTimeout(() => {
+        setIsDataLakeRefreshing(false)
+        updateToast(loadingToastId, {
+          isLoading: false,
+          isComplete: true,
+          title: 'Request queued',
+          message: 'Data source has been queued for fetching. Results will appear shortly.',
+        })
+      }, 500)
+    } catch (error) {
+      hasCompleted = true
+      clearInterval(progressInterval)
+      setIsDataLakeRefreshing(false)
+
+      updateToast(loadingToastId, {
+        type: 'error',
+        title: 'Queue failed',
+        message: error instanceof Error ? error.message : 'Failed to queue data source fetch',
+        isLoading: false,
+      })
+    }
   }
 
   const handleViewJson = async (filename: string, fullPath?: string) => {
@@ -247,8 +273,8 @@ export default function DashboardPage() {
     })
 
     try {
-      const previewUrl = `${API_CONFIG.BASE_URL}/download_datalake_file?file_path=${encodeURIComponent(fullPath)}&preview=true`
-      const response = await fetch(previewUrl)
+      // Use the full_path directly as a URL
+      const response = await fetch(fullPath)
 
       if (!response.ok) {
         throw new Error(`Failed to load file: ${response.statusText}`)
@@ -291,8 +317,8 @@ export default function DashboardPage() {
     })
 
     try {
-      const downloadUrl = `${API_CONFIG.BASE_URL}/download_datalake_file?file_path=${encodeURIComponent(fullPath)}`
-      const response = await fetch(downloadUrl)
+      // Use the full_path directly as a URL
+      const response = await fetch(fullPath)
 
       if (!response.ok) {
         throw new Error(`Download failed: ${response.statusText}`)
@@ -330,12 +356,15 @@ export default function DashboardPage() {
     const sourceName = source.source_name || sourceUrl.pathname.split('/').pop() || source.source_path
     const createdDate = new Date(source.created_at)
 
-    // Get datalake files for this source
+    // Get datalake files for this source (preserve API order)
     const sourceFiles = datalakeFiles[source.source_uuid] || []
 
+    const latestFile = sourceFiles.length > 0 ? sourceFiles[sourceFiles.length - 1] : null
+
     // Map datalake files to the expected format
-    const mappedFiles = sourceFiles.map(file => {
+    const mappedFiles = sourceFiles.map((file, index) => {
       const fileDate = new Date(file.last_modified)
+      const isLatest = index === sourceFiles.length - 1 // Only the last file (latest) will be pushed
       return {
         filename: file.filename,
         timestamp: fileDate.toLocaleDateString('en-GB', {
@@ -345,16 +374,11 @@ export default function DashboardPage() {
           hour: '2-digit',
           minute: '2-digit'
         }),
-        isPushed: true,
+        isPushed: isLatest,
         pushDate: fileDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }),
         fullPath: file.full_path,
       }
     })
-
-    // Get latest file
-    const latestFile = sourceFiles.length > 0
-      ? sourceFiles.sort((a, b) => new Date(b.last_modified).getTime() - new Date(a.last_modified).getTime())[0]
-      : null
 
     return {
       id: source.source_uuid,
@@ -466,6 +490,7 @@ export default function DashboardPage() {
               onPreviewJson={handleViewJson}
               onDownload={handleDownload}
               onRefresh={handleRefreshDataLake}
+              onExpand={handleExpandDataSource}
               isRefreshing={isDataLakeRefreshing}
             />
           </div>

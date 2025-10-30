@@ -1,4 +1,4 @@
-import lcampLogo from "@/assets/images/lcamp.png";
+import ql from "@/assets/images/QualityLink_logo_horizontal-blue.svg";
 import eu from "@/assets/images/eu.png";
 
 export default function Footer() {
@@ -11,11 +11,11 @@ export default function Footer() {
               <p className="text-turquoise-50 text-lg font-semibold flex items-center">
                 Made with support of the{" "}
                 <span className="inline-flex items-center gap-2">
-                  <img src={lcampLogo} alt="lcamp logo" className="w-[70px] h-[19px] ml-1 pt-[1px]" />
+                  <img src={ql} alt="lcamp logo" className="w-[130px] ml-2 pt-[1px]" />
                   <span>project</span>
                 </span>
               </p>
-              <button className="bg-white/10 px-3 py-2 rounded-lg text-white text-sm font-semibold hover:bg-white/20 transition-colors self-start">Visit LCAMP</button>
+              {/* <button className="bg-white/10 px-3 py-2 rounded-lg text-white text-sm font-semibold hover:bg-white/20 transition-colors self-start">Visit LCAMP</button> */}
             </div>
 
             {/* Partner logos placeholder */}

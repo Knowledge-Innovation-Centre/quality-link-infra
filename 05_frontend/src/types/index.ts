@@ -185,6 +185,7 @@ export interface GetDatalakeFilesParams {
   provider_uuid: string
   source_version_uuid: string
   source_uuid: string
+  source_path: string
 }
 
 export interface GetDatalakeFilesResponse {

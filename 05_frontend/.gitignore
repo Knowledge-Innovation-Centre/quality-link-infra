@@ -34,6 +34,7 @@ coverage
 .eslintcache
 .stylelintcache
 .turbo
+.vite
 
 # Editor directories and files
 .vscode/*

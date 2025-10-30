@@ -26,7 +26,8 @@ interface DataSourcesProps {
   dataSources: DataSource[]
   onPreviewJson: (filename: string, fullPath?: string) => void
   onDownload: (filename: string, fullPath?: string) => void
-  onRefresh?: () => void
+  onRefresh?: (sourceId: string, sourcePath: string) => void
+  onExpand?: (sourceId: string, sourcePath: string) => void
   isRefreshing?: boolean
 }
 
@@ -35,6 +36,7 @@ export default function DataSources({
   onPreviewJson,
   onDownload,
   onRefresh,
+  onExpand,
   isRefreshing = false
 }: DataSourcesProps) {
   const [expandedSources, setExpandedSources] = useState<Set<string>>(new Set())
@@ -47,7 +49,9 @@ export default function DataSources({
     return uuid.length > 8 ? `${uuid.substring(0, 8)}...` : uuid
   }
 
-  const toggleExpand = (id: string) => {
+  const toggleExpand = (id: string, sourcePath?: string) => {
+    const isCurrentlyExpanded = expandedSources.has(id)
+
     setExpandedSources(prev => {
       const newSet = new Set(prev)
       if (newSet.has(id)) {
@@ -57,6 +61,11 @@ export default function DataSources({
       }
       return newSet
     })
+
+    // Call onExpand when expanding (not collapsing)
+    if (!isCurrentlyExpanded && onExpand && sourcePath) {
+      onExpand(id, sourcePath)
+    }
   }
 
   const isExpanded = (id: string) => expandedSources.has(id)
@@ -151,7 +160,7 @@ export default function DataSources({
                     <p className="text-sm font-medium text-gray-900">{source.latestFile}</p>
                   </div>
                   <button
-                    onClick={() => toggleExpand(source.id)}
+                    onClick={() => toggleExpand(source.id, source.sourcePath)}
                     className="p-0.5 hover:bg-gray-200 rounded transition-colors"
                   >
                     <motion.div
@@ -224,9 +233,9 @@ export default function DataSources({
                             </AnimatePresence>
                           </div>
                         </div>
-                        {onRefresh && (
+                        {onRefresh && source.sourcePath && (
                           <button
-                            onClick={onRefresh}
+                            onClick={() => onRefresh(source.id, source.sourcePath!)}
                             disabled={isRefreshing}
                             className="bg-brand-base text-white px-3 py-2 rounded-lg text-xs font-medium hover:opacity-90 disabled:opacity-50 flex items-center gap-2 transition-opacity"
                           >

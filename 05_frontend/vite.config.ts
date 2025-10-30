@@ -13,7 +13,7 @@ export default defineConfig({
   server: {
     proxy: {
       '/api': {
-        target: 'https://h4k0owcwwco8ogcwgw4k8gcg.serverfarm.knowledgeinnovation.eu',
+        target: 'https://i08ggsggwokooc84coo4c08o.serverfarm.knowledgeinnovation.eu',
         changeOrigin: true,
         secure: false,
         rewrite: (path) => path.replace(/^\/api/, ''),
