@@ -44,6 +44,8 @@ CREATE TABLE IF NOT EXISTS source (
     source_version VARCHAR,
     last_date_pull DATE,
     last_file_pull VARCHAR,
+    last_file_pushed_date TIMESTAMP WITH TIME ZONE,
+    last_file_path VARCHAR, 
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     FOREIGN KEY (source_version_uuid) REFERENCES source_version(source_version_uuid) ON DELETE CASCADE
