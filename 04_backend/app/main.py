@@ -481,295 +481,295 @@ async def pull_manifest(
 async def populate_sample_data(db: Session = Depends(get_db)) -> Dict[str, Any]:
     try:
         sample_providers = [
-            {
-                "deqar_id": "DEQARINST0005",
-                "eter_id": 5,
-                "metadata": {
-                    "id": 5,
-                    "city": ["Vienna"],
-                    "names": [
-                        {
-                            "acronym": "TU Wien",
-                            "name_english": "Vienna University of Technology",
-                            "name_official": "Technische Universität Wien",
-                            "name_valid_to": None,
-                            "name_versions": [],
-                            "name_official_transliterated": ""
-                        }
-                    ],
-                    "country": ["Austria"],
-                    "eter_id": "AT0005",
-                    "part_of": [],
-                    "deqar_id": "DEQARINST0005",
-                    "includes": [],
-                    "locations": [
-                        {
-                            "lat": None,
-                            "city": "Vienna",
-                            "long": None,
-                            "country": {
-                                "id": None,
-                                "name_english": "Austria",
-                                "ehea_is_member": True,
-                                "iso_3166_alpha2": "AT",
-                                "iso_3166_alpha3": "AUT"
-                            },
-                            "country_valid_to": None,
-                            "country_verified": True,
-                            "country_valid_from": "1872-01-01"
-                        }
-                    ],
-                    "permalink": "https://www.testzone.eqar.eu/qa-results/search/by-institution/institution/?id=5",
-                    "identifiers": [
-                        {
-                            "agency": None,
-                            "resource": "ROR",
-                            "identifier": "https://ror.org/04d836q62"
-                        },
-                        {
-                            "agency": None,
-                            "resource": "Erasmus",
-                            "identifier": "A WIEN02"
-                        },
-                        {
-                            "agency": None,
-                            "resource": "SCHAC",
-                            "identifier": "at0005-ql-dev.test.36ada.eu"
-                        },
-                        {
-                            "agency": None,
-                            "resource": "Erasmus-Charter",
-                            "identifier": "E10209415"
-                        },
-                        {
-                            "agency": None,
-                            "resource": "EU-PIC",
-                            "identifier": "999979888"
-                        },
-                        {
-                            "agency": None,
-                            "resource": "EU-VAT",
-                            "identifier": "ATU37675002"
-                        },
-                        {
-                            "agency": None,
-                            "resource": "WHED",
-                            "identifier": "IAU-016256"
-                        }
-                    ],
-                    "closure_date": None,
-                    "date_created": "2025-01-01T00:00:00Z",
-                    "name_primary": "Vienna University of Technology",
-                    "website_link": "https://at0005-ql-dev.test.36ada.eu/",
-                    "founding_date": "1872-01-01",
-                    "qf_ehea_levels": [
-                        "third cycle",
-                        "second cycle",
-                        "first cycle",
-                        "short cycle"
-                    ],
-                    "is_other_provider": False,
-                    "organization_type": "higher education institution"
-                },
-                "manifest_json": [
-                    {
-                        "type": ".well-known",
-                        "domain": "quality-link-manifest.json"
-                    },
-                    {
-                        "type": "DNS",
-                        "domain": None
-                    }
-                ],
-                "name_concat": "DEMO_1",
-                "provider_name": "DEMO_1"
-            },
-            {
-                "deqar_id": "DEQARINST2000",
-                "eter_id": 2000,
-                "metadata": {
-                    "id": 2000,
-                    "city": ["Gdańsk"],
-                    "names": [
-                        {
-                            "acronym": "WSB Merito University Gdańsk",
-                            "name_english": "WSB Merito University Gdańsk",
-                            "name_official": "Uniwersytet WSB Merito w Gdańsku",
-                            "name_valid_to": None,
-                            "name_versions": [
-                                {
-                                    "name": "Gdańsk School of Banking (Wyższa Szkoła Bankowa w Gdańsku)",
-                                    "valid_to": "2023-12-31"
-                                },
-                                {
-                                    "name": "Gdańsk School of Banking (Wyższa Szkoła Bankowa w Gdańsku)",
-                                    "valid_to": "2013-06-30"
-                                }
-                            ],
-                            "name_official_transliterated": ""
-                        }
-                    ],
-                    "country": ["Poland"],
-                    "eter_id": "PL0247",
-                    "part_of": ["WSB Universities (consortium since 2005)"],
-                    "deqar_id": "DEQARINST2000",
-                    "includes": [],
-                    "locations": [
-                        {
-                            "lat": None,
-                            "city": "Gdańsk",
-                            "long": None,
-                            "country": {
-                                "id": None,
-                                "name_english": "Poland",
-                                "ehea_is_member": True,
-                                "iso_3166_alpha2": "PL",
-                                "iso_3166_alpha3": "POL"
-                            },
-                            "country_valid_to": None,
-                            "country_verified": True,
-                            "country_valid_from": "1998-01-01"
-                        },
-                        {
-                            "lat": None,
-                            "city": "Warszawa",
-                            "long": None,
-                            "country": {
-                                "id": None,
-                                "name_english": "Poland",
-                                "ehea_is_member": True,
-                                "iso_3166_alpha2": "PL",
-                                "iso_3166_alpha3": "POL"
-                            },
-                            "country_valid_to": None,
-                            "country_verified": True,
-                            "country_valid_from": "1998-01-01"
-                        },
-                        {
-                            "lat": None,
-                            "city": "Szczecin",
-                            "long": None,
-                            "country": {
-                                "id": None,
-                                "name_english": "Poland",
-                                "ehea_is_member": True,
-                                "iso_3166_alpha2": "PL",
-                                "iso_3166_alpha3": "POL"
-                            },
-                            "country_valid_to": None,
-                            "country_verified": True,
-                            "country_valid_from": "1998-01-01"
-                        },
-                        {
-                            "lat": None,
-                            "city": "Opole",
-                            "long": None,
-                            "country": {
-                                "id": None,
-                                "name_english": "Poland",
-                                "ehea_is_member": True,
-                                "iso_3166_alpha2": "PL",
-                                "iso_3166_alpha3": "POL"
-                            },
-                            "country_valid_to": None,
-                            "country_verified": True,
-                            "country_valid_from": "1998-01-01"
-                        },
-                        {
-                            "lat": None,
-                            "city": "Chorzów",
-                            "long": None,
-                            "country": {
-                                "id": None,
-                                "name_english": "Poland",
-                                "ehea_is_member": True,
-                                "iso_3166_alpha2": "PL",
-                                "iso_3166_alpha3": "POL"
-                            },
-                            "country_valid_to": None,
-                            "country_verified": True,
-                            "country_valid_from": "1998-01-01"
-                        },
-                        {
-                            "lat": None,
-                            "city": "Bydgoszcz",
-                            "long": None,
-                            "country": {
-                                "id": None,
-                                "name_english": "Poland",
-                                "ehea_is_member": True,
-                                "iso_3166_alpha2": "PL",
-                                "iso_3166_alpha3": "POL"
-                            },
-                            "country_valid_to": None,
-                            "country_verified": True,
-                            "country_valid_from": "1998-01-01"
-                        }
-                    ],
-                    "permalink": "https://www.testzone.eqar.eu/qa-results/search/by-institution/institution/?id=2000",
-                    "identifiers": [
-                        {
-                            "agency": None,
-                            "resource": "ROR",
-                            "identifier": "https://ror.org/01arx1p46"
-                        },
-                        {
-                            "agency": None,
-                            "resource": "PL-ETER.BAS.NATID",
-                            "identifier": "19162738600000"
-                        },
-                        {
-                            "agency": None,
-                            "resource": "Erasmus",
-                            "identifier": "PL GDANSK08"
-                        },
-                        {
-                            "agency": None,
-                            "resource": "SCHAC",
-                            "identifier": "pl0247-ql-dev.test.36ada.eu"
-                        },
-                        {
-                            "agency": None,
-                            "resource": "Erasmus-Charter",
-                            "identifier": "E10078430"
-                        },
-                        {
-                            "agency": None,
-                            "resource": "EU-PIC",
-                            "identifier": "949208245"
-                        },
-                        {
-                            "agency": None,
-                            "resource": "EU-VAT",
-                            "identifier": "PL5832558844"
-                        }
-                    ],
-                    "closure_date": None,
-                    "date_created": "2025-01-01T00:00:00Z",
-                    "name_primary": "WSB Merito University Gdańsk",
-                    "website_link": "https://pl0247-ql-dev.test.36ada.eu/",
-                    "founding_date": "1998-01-01",
-                    "qf_ehea_levels": [
-                        "other",
-                        "second cycle",
-                        "first cycle"
-                    ],
-                    "is_other_provider": False,
-                    "organization_type": "higher education institution"
-                },
-                "manifest_json": [
-                    {
-                        "type": ".well-known",
-                        "domain": "quality-link-manifest.json"
-                    },
-                    {
-                        "type": "DNS",
-                        "domain": None
-                    }
-                ],
-                "name_concat": "DEMO_2",
-                "provider_name": "DEMO_2"
-            },
+            # {
+            #     "deqar_id": "DEQARINST0005",
+            #     "eter_id": 5,
+            #     "metadata": {
+            #         "id": 5,
+            #         "city": ["Vienna"],
+            #         "names": [
+            #             {
+            #                 "acronym": "TU Wien",
+            #                 "name_english": "Vienna University of Technology",
+            #                 "name_official": "Technische Universität Wien",
+            #                 "name_valid_to": None,
+            #                 "name_versions": [],
+            #                 "name_official_transliterated": ""
+            #             }
+            #         ],
+            #         "country": ["Austria"],
+            #         "eter_id": "AT0005",
+            #         "part_of": [],
+            #         "deqar_id": "DEQARINST0005",
+            #         "includes": [],
+            #         "locations": [
+            #             {
+            #                 "lat": None,
+            #                 "city": "Vienna",
+            #                 "long": None,
+            #                 "country": {
+            #                     "id": None,
+            #                     "name_english": "Austria",
+            #                     "ehea_is_member": True,
+            #                     "iso_3166_alpha2": "AT",
+            #                     "iso_3166_alpha3": "AUT"
+            #                 },
+            #                 "country_valid_to": None,
+            #                 "country_verified": True,
+            #                 "country_valid_from": "1872-01-01"
+            #             }
+            #         ],
+            #         "permalink": "https://www.testzone.eqar.eu/qa-results/search/by-institution/institution/?id=5",
+            #         "identifiers": [
+            #             {
+            #                 "agency": None,
+            #                 "resource": "ROR",
+            #                 "identifier": "https://ror.org/04d836q62"
+            #             },
+            #             {
+            #                 "agency": None,
+            #                 "resource": "Erasmus",
+            #                 "identifier": "A WIEN02"
+            #             },
+            #             {
+            #                 "agency": None,
+            #                 "resource": "SCHAC",
+            #                 "identifier": "at0005-ql-dev.test.36ada.eu"
+            #             },
+            #             {
+            #                 "agency": None,
+            #                 "resource": "Erasmus-Charter",
+            #                 "identifier": "E10209415"
+            #             },
+            #             {
+            #                 "agency": None,
+            #                 "resource": "EU-PIC",
+            #                 "identifier": "999979888"
+            #             },
+            #             {
+            #                 "agency": None,
+            #                 "resource": "EU-VAT",
+            #                 "identifier": "ATU37675002"
+            #             },
+            #             {
+            #                 "agency": None,
+            #                 "resource": "WHED",
+            #                 "identifier": "IAU-016256"
+            #             }
+            #         ],
+            #         "closure_date": None,
+            #         "date_created": "2025-01-01T00:00:00Z",
+            #         "name_primary": "Vienna University of Technology",
+            #         "website_link": "https://at0005-ql-dev.test.36ada.eu/",
+            #         "founding_date": "1872-01-01",
+            #         "qf_ehea_levels": [
+            #             "third cycle",
+            #             "second cycle",
+            #             "first cycle",
+            #             "short cycle"
+            #         ],
+            #         "is_other_provider": False,
+            #         "organization_type": "higher education institution"
+            #     },
+            #     "manifest_json": [
+            #         {
+            #             "type": ".well-known",
+            #             "domain": "quality-link-manifest.json"
+            #         },
+            #         {
+            #             "type": "DNS",
+            #             "domain": None
+            #         }
+            #     ],
+            #     "name_concat": "DEMO_1",
+            #     "provider_name": "DEMO_1"
+            # },
+            # {
+            #     "deqar_id": "DEQARINST2000",
+            #     "eter_id": 2000,
+            #     "metadata": {
+            #         "id": 2000,
+            #         "city": ["Gdańsk"],
+            #         "names": [
+            #             {
+            #                 "acronym": "WSB Merito University Gdańsk",
+            #                 "name_english": "WSB Merito University Gdańsk",
+            #                 "name_official": "Uniwersytet WSB Merito w Gdańsku",
+            #                 "name_valid_to": None,
+            #                 "name_versions": [
+            #                     {
+            #                         "name": "Gdańsk School of Banking (Wyższa Szkoła Bankowa w Gdańsku)",
+            #                         "valid_to": "2023-12-31"
+            #                     },
+            #                     {
+            #                         "name": "Gdańsk School of Banking (Wyższa Szkoła Bankowa w Gdańsku)",
+            #                         "valid_to": "2013-06-30"
+            #                     }
+            #                 ],
+            #                 "name_official_transliterated": ""
+            #             }
+            #         ],
+            #         "country": ["Poland"],
+            #         "eter_id": "PL0247",
+            #         "part_of": ["WSB Universities (consortium since 2005)"],
+            #         "deqar_id": "DEQARINST2000",
+            #         "includes": [],
+            #         "locations": [
+            #             {
+            #                 "lat": None,
+            #                 "city": "Gdańsk",
+            #                 "long": None,
+            #                 "country": {
+            #                     "id": None,
+            #                     "name_english": "Poland",
+            #                     "ehea_is_member": True,
+            #                     "iso_3166_alpha2": "PL",
+            #                     "iso_3166_alpha3": "POL"
+            #                 },
+            #                 "country_valid_to": None,
+            #                 "country_verified": True,
+            #                 "country_valid_from": "1998-01-01"
+            #             },
+            #             {
+            #                 "lat": None,
+            #                 "city": "Warszawa",
+            #                 "long": None,
+            #                 "country": {
+            #                     "id": None,
+            #                     "name_english": "Poland",
+            #                     "ehea_is_member": True,
+            #                     "iso_3166_alpha2": "PL",
+            #                     "iso_3166_alpha3": "POL"
+            #                 },
+            #                 "country_valid_to": None,
+            #                 "country_verified": True,
+            #                 "country_valid_from": "1998-01-01"
+            #             },
+            #             {
+            #                 "lat": None,
+            #                 "city": "Szczecin",
+            #                 "long": None,
+            #                 "country": {
+            #                     "id": None,
+            #                     "name_english": "Poland",
+            #                     "ehea_is_member": True,
+            #                     "iso_3166_alpha2": "PL",
+            #                     "iso_3166_alpha3": "POL"
+            #                 },
+            #                 "country_valid_to": None,
+            #                 "country_verified": True,
+            #                 "country_valid_from": "1998-01-01"
+            #             },
+            #             {
+            #                 "lat": None,
+            #                 "city": "Opole",
+            #                 "long": None,
+            #                 "country": {
+            #                     "id": None,
+            #                     "name_english": "Poland",
+            #                     "ehea_is_member": True,
+            #                     "iso_3166_alpha2": "PL",
+            #                     "iso_3166_alpha3": "POL"
+            #                 },
+            #                 "country_valid_to": None,
+            #                 "country_verified": True,
+            #                 "country_valid_from": "1998-01-01"
+            #             },
+            #             {
+            #                 "lat": None,
+            #                 "city": "Chorzów",
+            #                 "long": None,
+            #                 "country": {
+            #                     "id": None,
+            #                     "name_english": "Poland",
+            #                     "ehea_is_member": True,
+            #                     "iso_3166_alpha2": "PL",
+            #                     "iso_3166_alpha3": "POL"
+            #                 },
+            #                 "country_valid_to": None,
+            #                 "country_verified": True,
+            #                 "country_valid_from": "1998-01-01"
+            #             },
+            #             {
+            #                 "lat": None,
+            #                 "city": "Bydgoszcz",
+            #                 "long": None,
+            #                 "country": {
+            #                     "id": None,
+            #                     "name_english": "Poland",
+            #                     "ehea_is_member": True,
+            #                     "iso_3166_alpha2": "PL",
+            #                     "iso_3166_alpha3": "POL"
+            #                 },
+            #                 "country_valid_to": None,
+            #                 "country_verified": True,
+            #                 "country_valid_from": "1998-01-01"
+            #             }
+            #         ],
+            #         "permalink": "https://www.testzone.eqar.eu/qa-results/search/by-institution/institution/?id=2000",
+            #         "identifiers": [
+            #             {
+            #                 "agency": None,
+            #                 "resource": "ROR",
+            #                 "identifier": "https://ror.org/01arx1p46"
+            #             },
+            #             {
+            #                 "agency": None,
+            #                 "resource": "PL-ETER.BAS.NATID",
+            #                 "identifier": "19162738600000"
+            #             },
+            #             {
+            #                 "agency": None,
+            #                 "resource": "Erasmus",
+            #                 "identifier": "PL GDANSK08"
+            #             },
+            #             {
+            #                 "agency": None,
+            #                 "resource": "SCHAC",
+            #                 "identifier": "pl0247-ql-dev.test.36ada.eu"
+            #             },
+            #             {
+            #                 "agency": None,
+            #                 "resource": "Erasmus-Charter",
+            #                 "identifier": "E10078430"
+            #             },
+            #             {
+            #                 "agency": None,
+            #                 "resource": "EU-PIC",
+            #                 "identifier": "949208245"
+            #             },
+            #             {
+            #                 "agency": None,
+            #                 "resource": "EU-VAT",
+            #                 "identifier": "PL5832558844"
+            #             }
+            #         ],
+            #         "closure_date": None,
+            #         "date_created": "2025-01-01T00:00:00Z",
+            #         "name_primary": "WSB Merito University Gdańsk",
+            #         "website_link": "https://pl0247-ql-dev.test.36ada.eu/",
+            #         "founding_date": "1998-01-01",
+            #         "qf_ehea_levels": [
+            #             "other",
+            #             "second cycle",
+            #             "first cycle"
+            #         ],
+            #         "is_other_provider": False,
+            #         "organization_type": "higher education institution"
+            #     },
+            #     "manifest_json": [
+            #         {
+            #             "type": ".well-known",
+            #             "domain": "quality-link-manifest.json"
+            #         },
+            #         {
+            #             "type": "DNS",
+            #             "domain": None
+            #         }
+            #     ],
+            #     "name_concat": "DEMO_2",
+            #     "provider_name": "DEMO_2"
+            # },
             {
                 "deqar_id": "DEQARINST0006",
                 "eter_id": 6,
