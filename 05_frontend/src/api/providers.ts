@@ -7,6 +7,8 @@ import type {
   GetProviderResponse,
   GetDatalakeFilesParams,
   GetDatalakeFilesResponse,
+  GetDatalakeDatesParams,
+  GetDatalakeDatesResponse,
   PullManifestParams,
   PullManifestResponse,
 } from '../types';
@@ -69,28 +71,50 @@ export class ProvidersApi {
   }
 
   /**
-   * Get datalake files for a specific source
+   * Get datalake files for a specific source (v2)
    * @param params - Provider UUID, source version UUID, source UUID, and source path
-   * @returns Promise with datalake files list
+   * @param date - Optional date in YYYY-MM-DD format
+   * @returns Promise with datalake files list including push status
    */
-  async getDatalakeFiles(params: GetDatalakeFilesParams): Promise<GetDatalakeFilesResponse> {
-    const endpoint = `${this.basePath}/list_datalake_files`;
+  async getDatalakeFiles(params: GetDatalakeFilesParams, date?: string): Promise<GetDatalakeFilesResponse> {
+    const endpoint = `${this.basePath}/list_datalake_files_v2`;
 
-    return apiClient.get<GetDatalakeFilesResponse>(endpoint, {
+    const queryParams: any = {
       provider_uuid: params.provider_uuid,
       source_version_uuid: params.source_version_uuid,
       source_uuid: params.source_uuid,
       source_path: params.source_path,
+    };
+
+    if (date) {
+      queryParams.date = date;
+    }
+
+    return apiClient.get<GetDatalakeFilesResponse>(endpoint, queryParams);
+  }
+
+  /**
+   * Get available dates for a specific source
+   * @param params - Provider UUID, source version UUID, and source UUID
+   * @returns Promise with available dates list
+   */
+  async getDatalakeDates(params: GetDatalakeDatesParams): Promise<GetDatalakeDatesResponse> {
+    const endpoint = `${this.basePath}/list_datalake_dates`;
+
+    return apiClient.get<GetDatalakeDatesResponse>(endpoint, {
+      provider_uuid: params.provider_uuid,
+      source_version_uuid: params.source_version_uuid,
+      source_uuid: params.source_uuid,
     });
   }
 
   /**
-   * Pull and refresh the manifest for a provider
+   * Pull and refresh the manifest for a provider (v2)
    * @param params - Provider UUID
    * @returns Promise with pull manifest results
    */
   async pullManifest(params: PullManifestParams): Promise<PullManifestResponse> {
-    const endpoint = `${this.basePath}/pull_manifest?provider_uuid=${params.provider_uuid}`;
+    const endpoint = `${this.basePath}/pull_manifest_v2?provider_uuid=${params.provider_uuid}`;
 
     return apiClient.post<PullManifestResponse>(endpoint);
   }
