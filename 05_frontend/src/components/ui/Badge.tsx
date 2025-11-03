@@ -8,7 +8,7 @@ interface BadgeProps {
 }
 
 const variantStyles: Record<BadgeVariant, string> = {
-  default: 'bg-turquoise-100 text-turquoise-900 border-turquoise-200',
+  default: 'bg-gray-100 text-gray-500 border-gray-100',
   success: 'bg-turquoise-100 text-turquoise-600 border-turquoise-200',
   warning: 'bg-turquoise-base text-white border-turquoise-base',
   error: 'bg-red-50 text-red-800 border-red-50',

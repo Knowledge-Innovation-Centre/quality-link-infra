@@ -20,6 +20,8 @@ interface DataSource {
   files: DataFile[]
   latestPushedFile?: DataFile
   sourcePath?: string
+  availableDates?: string[]
+  selectedDate?: string | null
 }
 
 interface DataSourcesProps {
@@ -28,6 +30,7 @@ interface DataSourcesProps {
   onDownload: (filename: string, fullPath?: string) => void
   onRefresh?: (sourceId: string, sourcePath: string) => void
   onExpand?: (sourceId: string, sourcePath: string) => void
+  onDateChange?: (sourceId: string, sourcePath: string, date: string) => void
   isRefreshing?: boolean
 }
 
@@ -37,10 +40,10 @@ export default function DataSources({
   onDownload,
   onRefresh,
   onExpand,
+  onDateChange,
   isRefreshing = false
 }: DataSourcesProps) {
   const [expandedSources, setExpandedSources] = useState<Set<string>>(new Set())
-  const [selectedDates, setSelectedDates] = useState<Record<string, string>>({})
   const [openDropdownId, setOpenDropdownId] = useState<string | null>(null)
   const dropdownRefs = useRef<Record<string, HTMLDivElement | null>>({})
 
@@ -70,13 +73,6 @@ export default function DataSources({
 
   const isExpanded = (id: string) => expandedSources.has(id)
 
-  const getSelectedDate = (id: string) => selectedDates[id] || 'Today'
-
-  const setDateForSource = (id: string, date: string) => {
-    setSelectedDates(prev => ({ ...prev, [id]: date }))
-    setOpenDropdownId(null) // Close dropdown after selection
-  }
-
   const toggleDropdown = (id: string) => {
     setOpenDropdownId(prev => prev === id ? null : id)
   }
@@ -97,9 +93,6 @@ export default function DataSources({
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [openDropdownId])
-
-  // Sample date options (you can customize this)
-  const dateOptions = ['Today', 'Yesterday', 'Last 7 days', 'Last 30 days']
 
   return (
     <section className="flex flex-col gap-8">
@@ -191,47 +184,52 @@ export default function DataSources({
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-1.5">
                           <span className="text-sm text-gray-900">Datalake from</span>
-                          <div className="relative" ref={(el) => { dropdownRefs.current[source.id] = el }}>
-                            <button
-                              onClick={() => toggleDropdown(source.id)}
-                              className="flex items-center gap-2 px-3 py-1 text-sm font-semibold text-brand-base hover:bg-brand-50 rounded transition-colors"
-                            >
-                              <span>{getSelectedDate(source.id)}</span>
-                              <motion.div
-                                animate={{ rotate: isDropdownOpen(source.id) ? 180 : 0 }}
-                                transition={{ duration: 0.2 }}
+                          {source.availableDates && source.availableDates.length > 0 && (
+                            <div className="relative" ref={(el) => { dropdownRefs.current[source.id] = el }}>
+                              <button
+                                onClick={() => toggleDropdown(source.id)}
+                                className="flex items-center gap-2 px-3 py-1 text-sm font-semibold text-brand-base hover:bg-brand-50 rounded transition-colors"
                               >
-                                <ChevronDown className="w-3 h-3" />
-                              </motion.div>
-                            </button>
-
-                            <AnimatePresence>
-                              {isDropdownOpen(source.id) && (
+                                <span>{source.selectedDate || 'Select date'}</span>
                                 <motion.div
-                                  initial={{ opacity: 0, y: -10 }}
-                                  animate={{ opacity: 1, y: 0 }}
-                                  exit={{ opacity: 0, y: -10 }}
+                                  animate={{ rotate: isDropdownOpen(source.id) ? 180 : 0 }}
                                   transition={{ duration: 0.2 }}
-                                  className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-10 min-w-[150px]"
                                 >
-                                  {dateOptions.map((option) => (
-                                    <button
-                                      key={option}
-                                      onClick={(e) => {
-                                        e.stopPropagation()
-                                        setDateForSource(source.id, option)
-                                      }}
-                                      className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-50 transition-colors first:rounded-t-lg last:rounded-b-lg ${
-                                        getSelectedDate(source.id) === option ? 'bg-brand-50 text-brand-base font-semibold' : 'text-gray-900'
-                                      }`}
-                                    >
-                                      {option}
-                                    </button>
-                                  ))}
+                                  <ChevronDown className="w-3 h-3" />
                                 </motion.div>
-                              )}
-                            </AnimatePresence>
-                          </div>
+                              </button>
+
+                              <AnimatePresence>
+                                {isDropdownOpen(source.id) && (
+                                  <motion.div
+                                    initial={{ opacity: 0, y: -10 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    exit={{ opacity: 0, y: -10 }}
+                                    transition={{ duration: 0.2 }}
+                                    className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-10 min-w-[150px] max-h-[300px] overflow-y-auto"
+                                  >
+                                    {source.availableDates.map((date) => (
+                                      <button
+                                        key={date}
+                                        onClick={(e) => {
+                                          e.stopPropagation()
+                                          if (onDateChange && source.sourcePath) {
+                                            onDateChange(source.id, source.sourcePath, date)
+                                          }
+                                          setOpenDropdownId(null)
+                                        }}
+                                        className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-50 transition-colors first:rounded-t-lg last:rounded-b-lg ${
+                                          source.selectedDate === date ? 'bg-brand-50 text-brand-base font-semibold' : 'text-gray-900'
+                                        }`}
+                                      >
+                                        {date}
+                                      </button>
+                                    ))}
+                                  </motion.div>
+                                )}
+                              </AnimatePresence>
+                            </div>
+                          )}
                         </div>
                         {onRefresh && source.sourcePath && (
                           <button

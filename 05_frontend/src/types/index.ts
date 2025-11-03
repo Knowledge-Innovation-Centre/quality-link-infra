@@ -121,8 +121,10 @@ export interface ProviderMetadata {
 }
 
 export interface ManifestMethod {
+  domain: string
   type: string
-  domain: string | null
+  check: boolean | null
+  path: string | null
 }
 
 export interface SourceJson {
@@ -179,6 +181,7 @@ export interface DatalakeFile {
   filename: string
   size: number
   last_modified: string
+  push_status: boolean
 }
 
 export interface GetDatalakeFilesParams {
@@ -200,6 +203,28 @@ export interface GetDatalakeFilesResponse {
   }
   files: DatalakeFile[]
   count: number
+  last_file_pushed: string | null
+  last_file_pushed_date: string | null
+  last_file_pushed_path: string | null
+}
+
+export interface GetDatalakeDatesParams {
+  provider_uuid: string
+  source_version_uuid: string
+  source_uuid: string
+}
+
+export interface GetDatalakeDatesResponse {
+  status: string
+  message: string
+  params: {
+    provider_uuid: string
+    source_version_uuid: string
+    source_uuid: string
+  }
+  dates: string[]
+  latest_date: string | null
+  count: number
 }
 
 export interface PullManifestParams {
@@ -209,7 +234,8 @@ export interface PullManifestParams {
 export interface PullManifestResponse {
   status: string
   provider_uuid: string
-  domain: string
+  schac_domain: string
+  website_link: string
   manifest_url: string | null
   manifest_found: boolean
   manifest_json: ManifestMethod[]

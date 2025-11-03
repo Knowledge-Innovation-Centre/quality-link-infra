@@ -25,6 +25,13 @@ export default function DashboardPage() {
   const [providerLoading, setProviderLoading] = useState(true)
   const [providerError, setProviderError] = useState<string | null>(null)
   const [datalakeFiles, setDatalakeFiles] = useState<Record<string, DatalakeFile[]>>({})
+  const [datalakeDates, setDatalakeDates] = useState<Record<string, string[]>>({})
+  const [selectedDate, setSelectedDate] = useState<Record<string, string>>({})
+  const [datalakeMetadata, setDatalakeMetadata] = useState<Record<string, {
+    last_file_pushed: string | null
+    last_file_pushed_date: string | null
+    last_file_pushed_path: string | null
+  }>>({})
 
   // Fetch provider data on component mount
   useEffect(() => {
@@ -51,26 +58,54 @@ export default function DashboardPage() {
     fetchProviderData()
   }, [providerUuid])
 
+  // Pull manifest on component mount
+  useEffect(() => {
+    const pullManifestOnMount = async () => {
+      if (!providerUuid) return
+
+      try {
+        // Call the pull_manifest API silently on page load
+        await providersApi.pullManifest({
+          provider_uuid: providerUuid,
+        })
+
+        // Refresh provider data to get updated manifest
+        const updatedProviderData = await providersApi.getProvider({
+          provider_uuid: providerUuid,
+        })
+        setProviderData(updatedProviderData)
+      } catch (error) {
+        // Silently fail - don't show error to user on initial load
+        console.error('Error pulling manifest on mount:', error)
+      }
+    }
+
+    pullManifestOnMount()
+  }, [providerUuid])
+
   // Generate identifiers from provider data
   const identifiers = providerData?.provider.metadata.identifiers.map(id =>
     `${id.resource}: ${id.identifier}`
   ) || []
 
   // Map manifest_json to domain verification methods
-  const websiteDomain = providerData?.provider.metadata.website_link
-    ? new URL(providerData.provider.metadata.website_link).hostname
-    : 'N/A'
-
   const domainMethods = providerData?.provider.manifest_json.map(manifest => {
-    const hasManifest = manifest.domain !== null
+    // Map check field to status: true = found, false = not_found, null = not_searched
+    let status: 'found' | 'not_found' | 'valid' | 'not_searched';
+    if (manifest.check === true) {
+      status = 'valid'; // Found and valid
+    } else if (manifest.check === false) {
+      status = 'not_found'; // Not found / missing
+    } else {
+      status = 'not_searched'; // Skipped
+    }
+
     return {
-      domain: websiteDomain,
+      domain: manifest.domain,
       method: manifest.type === '.well-known' ? '.well-known' : 'DNS TXT',
-      status: hasManifest ? 'valid' as const : 'not_found' as const,
-      message: hasManifest ? 'Manifest found' : 'Manifest not found',
-      manifestPath: hasManifest && manifest.type === '.well-known'
-        ? `${providerData.provider.metadata.website_link}.well-known/${manifest.domain}`
-        : undefined,
+      status,
+      message: manifest.check === true ? 'Manifest found' : manifest.check === false ? 'Manifest not found' : 'Skipped',
+      manifestPath: manifest.path || undefined,
     }
   }) || []
 
@@ -160,10 +195,32 @@ export default function DashboardPage() {
   const handleExpandDataSource = async (sourceUuid: string, sourcePath: string) => {
     if (!providerData) return
 
-    // Check if we already have files for this source
+    // Check if we already have data for this source
     if (datalakeFiles[sourceUuid]) return
 
     try {
+      // First fetch available dates
+      const datesResponse = await providersApi.getDatalakeDates({
+        provider_uuid: providerData.provider.provider_uuid,
+        source_version_uuid: providerData.source_version.source_version_uuid,
+        source_uuid: sourceUuid,
+      })
+
+      // Store dates
+      setDatalakeDates(prev => ({
+        ...prev,
+        [sourceUuid]: datesResponse.dates
+      }))
+
+      // Set default selected date to latest
+      if (datesResponse.latest_date) {
+        setSelectedDate(prev => ({
+          ...prev,
+          [sourceUuid]: datesResponse.latest_date!
+        }))
+      }
+
+      // Then fetch files without date parameter (backend defaults to latest)
       const filesResponse = await providersApi.getDatalakeFiles({
         provider_uuid: providerData.provider.provider_uuid,
         source_version_uuid: providerData.source_version.source_version_uuid,
@@ -175,12 +232,64 @@ export default function DashboardPage() {
         ...prev,
         [sourceUuid]: filesResponse.files
       }))
+
+      // Store metadata for latest pushed file
+      setDatalakeMetadata(prev => ({
+        ...prev,
+        [sourceUuid]: {
+          last_file_pushed: filesResponse.last_file_pushed,
+          last_file_pushed_date: filesResponse.last_file_pushed_date,
+          last_file_pushed_path: filesResponse.last_file_pushed_path,
+        }
+      }))
     } catch (error) {
-      console.error(`Error fetching datalake files for source ${sourceUuid}:`, error)
+      console.error(`Error fetching datalake data for source ${sourceUuid}:`, error)
+      showToast({
+        type: 'error',
+        title: 'Failed to load data',
+        message: error instanceof Error ? error.message : 'Could not fetch datalake data',
+      })
+    }
+  }
+
+  const handleDateChange = async (sourceUuid: string, sourcePath: string, date: string) => {
+    if (!providerData) return
+
+    try {
+      // Update selected date
+      setSelectedDate(prev => ({
+        ...prev,
+        [sourceUuid]: date
+      }))
+
+      // Fetch files for the selected date
+      const filesResponse = await providersApi.getDatalakeFiles({
+        provider_uuid: providerData.provider.provider_uuid,
+        source_version_uuid: providerData.source_version.source_version_uuid,
+        source_uuid: sourceUuid,
+        source_path: sourcePath,
+      }, date)
+
+      setDatalakeFiles(prev => ({
+        ...prev,
+        [sourceUuid]: filesResponse.files
+      }))
+
+      // Update metadata for latest pushed file
+      setDatalakeMetadata(prev => ({
+        ...prev,
+        [sourceUuid]: {
+          last_file_pushed: filesResponse.last_file_pushed,
+          last_file_pushed_date: filesResponse.last_file_pushed_date,
+          last_file_pushed_path: filesResponse.last_file_pushed_path,
+        }
+      }))
+    } catch (error) {
+      console.error(`Error fetching files for date ${date}:`, error)
       showToast({
         type: 'error',
         title: 'Failed to load files',
-        message: error instanceof Error ? error.message : 'Could not fetch datalake files',
+        message: error instanceof Error ? error.message : 'Could not fetch files for selected date',
       })
     }
   }
@@ -355,15 +464,17 @@ export default function DashboardPage() {
     const sourceName = source.source_name || sourceUrl.pathname.split('/').pop() || source.source_path
     const createdDate = new Date(source.created_at)
 
-    // Get datalake files for this source (preserve API order)
+    // Get datalake files for this source (files are sorted by last_modified from API)
     const sourceFiles = datalakeFiles[source.source_uuid] || []
 
     const latestFile = sourceFiles.length > 0 ? sourceFiles[sourceFiles.length - 1] : null
 
+    // Get metadata for this source (last_file_pushed from API)
+    const metadata = datalakeMetadata[source.source_uuid]
+
     // Map datalake files to the expected format
-    const mappedFiles = sourceFiles.map((file, index) => {
+    const mappedFiles = sourceFiles.map((file) => {
       const fileDate = new Date(file.last_modified)
-      const isLatest = index === sourceFiles.length - 1 // Only the last file (latest) will be pushed
       return {
         filename: file.filename,
         timestamp: fileDate.toLocaleDateString('en-GB', {
@@ -373,11 +484,24 @@ export default function DashboardPage() {
           hour: '2-digit',
           minute: '2-digit'
         }),
-        isPushed: isLatest,
+        isPushed: file.push_status, // Use push_status from API (v2)
         pushDate: fileDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }),
         fullPath: file.full_path,
       }
     })
+
+    // Use last_file_pushed from API metadata if available
+    const latestPushedFile = metadata?.last_file_pushed && metadata?.last_file_pushed_date && metadata?.last_file_pushed_path ? {
+      filename: metadata.last_file_pushed,
+      timestamp: `Pushed ${new Date(metadata.last_file_pushed_date).toLocaleDateString('en-GB', {
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      })}`,
+      fullPath: metadata.last_file_pushed_path,
+    } : undefined
 
     return {
       id: source.source_uuid,
@@ -387,18 +511,10 @@ export default function DashboardPage() {
       pushed: createdDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }),
       latestFile: latestFile?.filename || sourceName,
       files: mappedFiles.length > 0 ? mappedFiles : [],
-      latestPushedFile: latestFile ? {
-        filename: latestFile.filename,
-        timestamp: `Pushed ${new Date(latestFile.last_modified).toLocaleDateString('en-GB', {
-          day: 'numeric',
-          month: 'short',
-          year: 'numeric',
-          hour: '2-digit',
-          minute: '2-digit'
-        })}`,
-        fullPath: latestFile.full_path,
-      } : undefined,
+      latestPushedFile,
       sourcePath: source.source_path,
+      availableDates: datalakeDates[source.source_uuid] || [],
+      selectedDate: selectedDate[source.source_uuid] || null,
     }
   }) || []
 
@@ -490,6 +606,7 @@ export default function DashboardPage() {
               onDownload={handleDownload}
               onRefresh={handleRefreshDataLake}
               onExpand={handleExpandDataSource}
+              onDateChange={handleDateChange}
               isRefreshing={isDataLakeRefreshing}
             />
           </div>
