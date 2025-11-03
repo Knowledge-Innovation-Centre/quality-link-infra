@@ -628,7 +628,7 @@ async def list_datalake_files_v2(
         today_date = datetime.now().strftime("%Y-%m-%d")
         
         source_query = text("""
-            SELECT last_file_pull, last_file_pushed_date, last_file_path
+            SELECT last_file_pushed, last_file_pushed_date, last_file_pushed_path
             FROM source
             WHERE source_uuid = :source_uuid
         """)
@@ -636,15 +636,15 @@ async def list_datalake_files_v2(
         source_result = db.execute(source_query, {"source_uuid": str(source_uuid)}).fetchone()
         
         source_info = {
-            "last_file_pull": None,
+            "last_file_pushed": None,
             "last_file_pushed_date": None,
-            "last_file_path": None
+            "last_file_pushed_path": None
         }
         
         if source_result:
-            source_info["last_file_pull"] = source_result[0].isoformat() if source_result[0] else None
+            source_info["last_file_pushed"] = source_result[0].isoformat() if source_result[0] else None
             source_info["last_file_pushed_date"] = source_result[1].isoformat() if source_result[1] else None
-            source_info["last_file_path"] = source_result[2]
+            source_info["last_file_pushed_path"] = source_result[2]
         
         minio_client = None
         try:
@@ -736,9 +736,9 @@ async def list_datalake_files_v2(
                         "date": date,
                         "date_source": date_source
                     },
-                    "last_file_pushed": source_info["last_file_pull"],
+                    "last_file_pushed": source_info["last_file_pushed"],
                     "last_file_pushed_date": source_info["last_file_pushed_date"],
-                    "last_file_pushed_path": source_info["last_file_path"],
+                    "last_file_pushed_path": source_info["last_file_pushed_path"],
                     "files": [],
                     "count": 0
                 }
@@ -759,9 +759,9 @@ async def list_datalake_files_v2(
                     "date_source": date_source
                 },
                 "files": sorted_files,
-                "last_file_pushed": source_info["last_file_pull"],
+                "last_file_pushed": source_info["last_file_pushed"],
                 "last_file_pushed_date": source_info["last_file_pushed_date"],
-                "last_file_pushed_path": source_info["last_file_path"],
+                "last_file_pushed_path": source_info["last_file_pushed_path"],
                 "count": len(sorted_files)
             }
             
