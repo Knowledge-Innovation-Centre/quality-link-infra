@@ -21,6 +21,7 @@ import re
 import io
 import dns.resolver
 import yaml
+from urllib.parse import urlparse
 
 load_dotenv()
 
@@ -1075,7 +1076,10 @@ def prepare_test_combinations(schac_identifier: str, website_link: Optional[str]
     schac_domain = schac_identifier
     
     website_domains = []
-    website_link = f"{website_link.split("/")[0].strip()}/"
+
+    parsed_url = urlparse(website_link)
+    website_link = f"{parsed_url.scheme}://{parsed_url.netloc}"
+
     if website_link:
         website_domain = website_link
         website_domains.append(website_domain)
