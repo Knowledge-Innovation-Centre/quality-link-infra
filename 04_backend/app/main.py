@@ -642,7 +642,7 @@ async def list_datalake_files_v2(
         }
         
         if source_result:
-            source_info["last_file_pushed"] = source_result[0].isoformat() if source_result[0] else None
+            source_info["last_file_pushed"] = source_result[0]
             source_info["last_file_pushed_date"] = source_result[1].isoformat() if source_result[1] else None
             source_info["last_file_pushed_path"] = source_result[2]
         
