@@ -486,6 +486,27 @@ async def list_datalake_files(
     db: Session = Depends(get_db)
 ) -> Dict[str, Any]:
     try:
+        today_date = datetime.now().strftime("%Y-%m-%d")
+        
+        source_query = text("""
+            SELECT last_file_pull, last_file_pushed_date, last_file_path
+            FROM source
+            WHERE source_uuid = :source_uuid
+        """)
+        
+        source_result = db.execute(source_query, {"source_uuid": str(source_uuid)}).fetchone()
+        
+        source_info = {
+            "last_file_pull": None,
+            "last_file_pushed_date": None,
+            "last_file_path": None
+        }
+        
+        if source_result:
+            source_info["last_file_pull"] = source_result[0].isoformat() if source_result[0] else None
+            source_info["last_file_pushed_date"] = source_result[1].isoformat() if source_result[1] else None
+            source_info["last_file_path"] = source_result[2]
+        
         minio_client = None
         try:
             minio_client = Minio(
@@ -546,6 +567,8 @@ async def list_datalake_files(
                 detail="No date could be determined. Please provide a date or ensure manifest contains a latest_date."
             )
         
+        is_today = (date_folder == today_date)
+        
         prefix = f"datalake/courses/{provider_uuid}/{source_version_uuid}/{source_uuid}/{date_folder}/"
         
         try:
@@ -559,7 +582,8 @@ async def list_datalake_files(
                     "full_path": file_path,
                     "filename": filename,
                     "size": obj.size,
-                    "last_modified": obj.last_modified.isoformat()
+                    "last_modified": obj.last_modified.isoformat(),
+                    "push_status": False  
                 })
             
             if not file_list:
@@ -573,11 +597,17 @@ async def list_datalake_files(
                         "date": date,
                         "date_source": date_source
                     },
+                    "last_file_pushed": source_info["last_file_pull"],
+                    "last_file_pushed_date": source_info["last_file_pushed_date"],
+                    "last_file_pushed_path": source_info["last_file_path"],
                     "files": [],
                     "count": 0
                 }
             
-            sorted_files = sorted(file_list, key=lambda x: x["filename"])
+            sorted_files = sorted(file_list, key=lambda x: x["last_modified"])
+            
+            if is_today and sorted_files:
+                sorted_files[-1]["push_status"] = True
             
             return {
                 "status": "success",
@@ -590,6 +620,9 @@ async def list_datalake_files(
                     "date_source": date_source
                 },
                 "files": sorted_files,
+                "last_file_pushed": source_info["last_file_pull"],
+                "last_file_pushed_date": source_info["last_file_pushed_date"],
+                "last_file_pushed_path": source_info["last_file_path"],
                 "count": len(sorted_files)
             }
             
@@ -850,7 +883,7 @@ def check_well_known(domain: str) -> Optional[str]:
             
     base_url = f"https://{domain}"
     try:
-        response = requests.get(base_url, timeout=10)
+        response = requests.get(base_url, timeout=30)
         response.raise_for_status()
         
         soup = BeautifulSoup(response.text, "html.parser")
@@ -873,7 +906,7 @@ def validate_manifest_url(url: str) -> Tuple[Optional[str], Optional[dict]]:
         return None, None
             
     try:
-        manifest_resp = requests.get(url, timeout=10)
+        manifest_resp = requests.get(url, timeout=30)
         
         if manifest_resp.status_code == 200:
             content_type = manifest_resp.headers.get("content-type", "")
