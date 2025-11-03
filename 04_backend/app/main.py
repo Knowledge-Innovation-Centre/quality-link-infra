@@ -486,6 +486,145 @@ async def list_datalake_files(
     db: Session = Depends(get_db)
 ) -> Dict[str, Any]:
     try:
+        minio_client = None
+        try:
+            minio_client = Minio(
+                MINIO_ENDPOINT,
+                access_key=MINIO_KEY,
+                secret_key=MINIO_SECRET,
+                secure=False  
+            )
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to connect to MinIO: {str(e)}"
+            )
+
+        date_folder = None
+        date_source = "provided"
+
+        if date:
+            try:
+                parsed_date = datetime.strptime(date, "%Y-%m-%d")
+                date_folder = parsed_date.strftime("%Y-%m-%d")
+            except ValueError:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid date format. Please use YYYY-MM-DD format."
+                )
+        else:
+            manifest_path = f"datalake/courses/{provider_uuid}/{source_version_uuid}/{source_uuid}/source_manifest.json"
+            try:
+                data = minio_client.get_object(BUCKET_NAME, manifest_path)
+                manifest_content = data.read().decode('utf-8')
+                manifest = json.loads(manifest_content)
+
+                if "latest_date" in manifest and manifest["latest_date"]:
+                    date_folder = manifest["latest_date"]
+                    date = date_folder  
+                    date_source = "manifest"
+                else:
+                    raise HTTPException(
+                        status_code=status.HTTP_404_NOT_FOUND,
+                        detail="No latest date found in manifest file"
+                    )
+
+            except S3Error as e:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"Failed to retrieve manifest file: {str(e)}"
+                )
+            except json.JSONDecodeError as e:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"Failed to parse manifest file: {str(e)}"
+                )
+
+        if not date_folder:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No date could be determined. Please provide a date or ensure manifest contains a latest_date."
+            )
+
+
+        prefix = f"datalake/courses/{provider_uuid}/{source_version_uuid}/{source_uuid}/{date_folder}/"
+
+        try:
+            objects = minio_client.list_objects(BUCKET_NAME, prefix=prefix, recursive=True)
+            file_list = []
+
+            for obj in objects:
+                file_path = obj.object_name
+                filename = file_path.split('/')[-1]
+                file_list.append({
+                    "full_path": file_path,
+                    "filename": filename,
+                    "size": obj.size,
+                    "last_modified": obj.last_modified.isoformat()
+
+                })
+
+            if not file_list:
+                return {
+                    "status": "success",
+                    "message": "No files found for the specified parameters",
+                    "params": {
+                        "provider_uuid": str(provider_uuid),
+                        "source_version_uuid": str(source_version_uuid),
+                        "source_uuid": str(source_uuid),
+                        "date": date,
+                        "date_source": date_source
+                    },
+
+
+
+                    "files": [],
+                    "count": 0
+                }
+
+            sorted_files = sorted(file_list, key=lambda x: x["filename"])
+
+            return {
+                "status": "success",
+                "message": "Files retrieved successfully",
+                "params": {
+                    "provider_uuid": str(provider_uuid),
+                    "source_version_uuid": str(source_version_uuid),
+                    "source_uuid": str(source_uuid),
+                    "date": date,
+                    "date_source": date_source
+                },
+                "files": sorted_files,
+
+
+
+                "count": len(sorted_files)
+            }
+
+        except S3Error as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"MinIO error when listing files: {str(e)}"
+            )
+
+    except HTTPException as http_exc:
+        raise http_exc
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to list datalake files: {str(e)}"
+        )
+
+
+@app.get("/list_datalake_files_v2", tags=["Datalake"], status_code=status.HTTP_200_OK)
+async def list_datalake_files_v2(
+    provider_uuid: UUID = Query(..., title="Provider UUID"),
+    source_version_uuid: UUID = Query(..., title="Source Version UUID"),
+    source_uuid: UUID = Query(..., title="Source UUID"),
+    date: Optional[str] = Query(None, title="Date in YYYY-MM-DD format", regex=r"^\d{4}-\d{2}-\d{2}$|^$"),
+    db: Session = Depends(get_db)
+) -> Dict[str, Any]:
+    try:
         today_date = datetime.now().strftime("%Y-%m-%d")
         
         source_query = text("""
