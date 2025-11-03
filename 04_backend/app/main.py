@@ -1075,37 +1075,41 @@ def validate_manifest_url(url: str) -> Tuple[Optional[str], Optional[dict]]:
 def prepare_test_combinations(schac_identifier: str, website_link: Optional[str]) -> List[dict]:
     schac_domain = schac_identifier
     
-    website_domains = []
-
-    parsed_url = urlparse(website_link)
-    website_link = f"{parsed_url.scheme}://{parsed_url.netloc}"
-
+    tested_combinations = set()
+    test_combinations = []
+    
+    test_combinations.append({"domain": schac_domain, "type": "DNS", "check": False, "path": None})
+    tested_combinations.add((schac_domain, "DNS"))
+    
+    test_combinations.append({"domain": schac_domain, "type": ".well-known", "check": None, "path": None})
+    tested_combinations.add((schac_domain, ".well-known"))
+    
     if website_link:
-        website_domain = website_link
-        website_domains.append(website_domain)
+        parsed_url = urlparse(website_link)
         
-        cleaned_domain = website_link.replace("https://", "").replace("http://", "").replace("www.", "").rstrip("/")
-        cleaned_url = cleaned_domain
+        if not parsed_url.scheme:
+            website_link = f"https://{website_link}"
+            parsed_url = urlparse(website_link)
         
-        if cleaned_url != website_domain:
-            website_domains.append(cleaned_url)
-        else:
-            website_domains.append(None)
-    else:
-        website_domains = [None, None]
-    
-    test_combinations = [
-        {"domain": schac_domain, "type": "DNS", "check": False, "path": None},
-        {"domain": schac_domain, "type": ".well-known", "check": None, "path": None},
-        {"domain": website_domains[0], "type": "DNS", "check": None, "path": None},
-        {"domain": website_domains[0], "type": ".well-known", "check": None, "path": None}
-    ]
-    
-    if website_domains[1] is not None:
-        test_combinations.extend([
-            {"domain": website_domains[1], "type": "DNS", "check": None, "path": None},
-            {"domain": website_domains[1], "type": ".well-known", "check": None, "path": None}
-        ])
+        root_domain = parsed_url.netloc
+        
+        if (root_domain, "DNS") not in tested_combinations:
+            test_combinations.append({"domain": root_domain, "type": "DNS", "check": None, "path": None})
+            tested_combinations.add((root_domain, "DNS"))
+        
+        if (root_domain, ".well-known") not in tested_combinations:
+            test_combinations.append({"domain": root_domain, "type": ".well-known", "check": None, "path": None})
+            tested_combinations.add((root_domain, ".well-known"))
+        
+        root_domain_no_www = root_domain.replace("www.", "")
+        
+        if (root_domain_no_www, "DNS") not in tested_combinations:
+            test_combinations.append({"domain": root_domain_no_www, "type": "DNS", "check": None, "path": None})
+            tested_combinations.add((root_domain_no_www, "DNS"))
+        
+        if (root_domain_no_www, ".well-known") not in tested_combinations:
+            test_combinations.append({"domain": root_domain_no_www, "type": ".well-known", "check": None, "path": None})
+            tested_combinations.add((root_domain_no_www, ".well-known"))
     
     return test_combinations
 
