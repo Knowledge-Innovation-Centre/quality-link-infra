@@ -1020,7 +1020,8 @@ def check_well_known(domain: str) -> Optional[str]:
     if not domain:
         return None
             
-    base_url = f"https://{domain}"
+    # base_url = f"https://{domain}"
+    base_url = domain
     try:
         response = requests.get(base_url, timeout=30)
         response.raise_for_status()
@@ -1071,30 +1072,38 @@ def validate_manifest_url(url: str) -> Tuple[Optional[str], Optional[dict]]:
 
 
 def prepare_test_combinations(schac_identifier: str, website_link: Optional[str]) -> List[dict]:
-
     schac_domain = schac_identifier
     
     website_domains = []
+    website_link = f"{website_link.split("/")[0].strip()}/"
     if website_link:
-        website_domain = website_link.replace("https://", "").replace("http://", "").rstrip("/")
+        website_domain = website_link
         website_domains.append(website_domain)
         
-        website_domain_no_www = website_domain.replace("www.", "")
-        if website_domain_no_www != website_domain:
-            website_domains.append(website_domain_no_www)
+        cleaned_domain = website_link.replace("https://", "").replace("http://", "").replace("www.", "").rstrip("/")
+        cleaned_url = cleaned_domain
+        
+        if cleaned_url != website_domain:
+            website_domains.append(cleaned_url)
         else:
-            website_domains.append(website_domain)  
+            website_domains.append(None)
     else:
         website_domains = [None, None]
     
-    return [
+    test_combinations = [
         {"domain": schac_domain, "type": "DNS", "check": False, "path": None},
         {"domain": schac_domain, "type": ".well-known", "check": None, "path": None},
         {"domain": website_domains[0], "type": "DNS", "check": None, "path": None},
-        {"domain": website_domains[0], "type": ".well-known", "check": None, "path": None},
-        {"domain": website_domains[1], "type": "DNS", "check": None, "path": None},
-        {"domain": website_domains[1], "type": ".well-known", "check": None, "path": None},
+        {"domain": website_domains[0], "type": ".well-known", "check": None, "path": None}
     ]
+    
+    if website_domains[1] is not None:
+        test_combinations.extend([
+            {"domain": website_domains[1], "type": "DNS", "check": None, "path": None},
+            {"domain": website_domains[1], "type": ".well-known", "check": None, "path": None}
+        ])
+    
+    return test_combinations
 
 
 @app.post("/pull_manifest_v2", tags=["Providers"])
