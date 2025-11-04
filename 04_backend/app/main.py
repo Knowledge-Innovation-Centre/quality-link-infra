@@ -657,28 +657,47 @@ def get_txt_records(domain: str) -> Optional[str]:
         return None
 
 
-def check_well_known(domain: str) -> Optional[str]:
+def check_well_known(domain: str) -> Tuple[Optional[str], Optional[dict]]:
 
     if not domain:
-        return None
-            
+        return None, None
+        
     base_url = f"https://{domain}"
-    try:
-        response = requests.get(base_url, timeout=30)
-        response.raise_for_status()
+    
+    well_known_paths = [
+        "/.well-known/quality-link-manifest",
+        "/.well-known/quality-link-manifest.json",
+        "/.well-known/quality-link-manifest.yaml"
+    ]
+    
+    for path in well_known_paths:
+        full_url = f"{base_url.rstrip('/')}{path}"
         
-        soup = BeautifulSoup(response.text, "html.parser")
-        hrefs = [a.get("href") for a in soup.find_all("a", href=True)]
+        try:
+            response = requests.get(full_url, timeout=30)
+            
+            if response.status_code == 200:
+                content_type = response.headers.get("content-type", "")
+                
+                if content_type.startswith("application/json") or path.endswith(".json"):
+                    try:
+                        return full_url, response.json()
+                    except:
+                        pass
+                
+                if content_type.startswith("application/yaml") or content_type.startswith("application/x-yaml") or path.endswith(".yaml"):
+                    try:
+                        return full_url, yaml.safe_load(response.text)
+                    except:
+                        pass
+                        
+                if response.text and len(response.text.strip()) > 0:
+                    return full_url, {"raw_path": True, "content_type": content_type}
         
-        well_known_link = next((h for h in hrefs if ".well-known" in h), None)
-        
-        if well_known_link:
-            full_url = well_known_link if well_known_link.startswith("http") else f"{base_url.rstrip('/')}/{well_known_link.lstrip('/')}"
-            return full_url
-        
-        return None
-    except Exception:
-        return None
+        except Exception:
+            continue
+    
+    return None, None
 
 
 def validate_manifest_url(url: str) -> Tuple[Optional[str], Optional[dict]]:
@@ -834,18 +853,15 @@ async def pull_manifest_v2(
                     test["check"] = False
                     
             elif test["type"] == ".well-known":
-                well_known_url = check_well_known(test["domain"])
-                if well_known_url:
-                    manifest_url, manifest_data = validate_manifest_url(well_known_url)
-                    if manifest_url:
-                        manifest_found = True
-                        test["check"] = True
-                        test["path"] = manifest_url
-                        
-                        for j in range(i+1, len(test_combinations)):
-                            test_combinations[j]["check"] = None
-                    else:
-                        test["check"] = False
+                manifest_url, manifest_data = check_well_known(test["domain"])
+                
+                if manifest_url and manifest_data:
+                    manifest_found = True
+                    test["check"] = True
+                    test["path"] = manifest_url
+                    
+                    for j in range(i+1, len(test_combinations)):
+                        test_combinations[j]["check"] = None
                 else:
                     test["check"] = False
         
