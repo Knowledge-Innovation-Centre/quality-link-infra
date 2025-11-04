@@ -662,8 +662,7 @@ def check_well_known(domain: str) -> Optional[str]:
     if not domain:
         return None
             
-    # base_url = f"https://{domain}"
-    base_url = domain
+    base_url = f"https://{domain}"
     try:
         response = requests.get(base_url, timeout=30)
         response.raise_for_status()
