@@ -737,11 +737,12 @@ def prepare_test_combinations(schac_identifier: str, website_link: Optional[str]
     tested_combinations = set()
     test_combinations = []
     
-    test_combinations.append({"domain": schac_domain, "type": "DNS", "check": False, "path": None})
-    tested_combinations.add((schac_domain, "DNS"))
-    
-    test_combinations.append({"domain": schac_domain, "type": ".well-known", "check": None, "path": None})
-    tested_combinations.add((schac_domain, ".well-known"))
+    if schac_identifier:
+        test_combinations.append({"domain": schac_identifier, "type": "DNS", "check": False, "path": None})
+        tested_combinations.add((schac_identifier, "DNS"))
+        
+        test_combinations.append({"domain": schac_identifier, "type": ".well-known", "check": None, "path": None})
+        tested_combinations.add((schac_identifier, ".well-known"))
     
     if website_link:
         parsed_url = urlparse(website_link)
@@ -817,14 +818,15 @@ async def pull_manifest_v2(
             (item["identifier"] for item in identifiers if item.get("resource") == "SCHAC"),
             None
         )
-        if not schac_identifier:
+
+        website_link = metadata.get("website_link")
+
+        if not schac_identifier and not website_link:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="SCHAC identifier not found in metadata"
             )
-        
-        website_link = metadata.get("website_link")
-        
+                
         test_combinations = prepare_test_combinations(schac_identifier, website_link)
         
         manifest_found = False
