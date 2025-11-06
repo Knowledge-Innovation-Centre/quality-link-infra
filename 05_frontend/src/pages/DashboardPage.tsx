@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { providersApi } from '../api'
+import { API_CONFIG } from '../api/config'
 import type { GetProviderResponse, DatalakeFile } from '../types'
 import Navbar from '@/components/layout/Navbar'
 import Footer from '@/components/layout/Footer'
@@ -56,31 +57,6 @@ export default function DashboardPage() {
     }
 
     fetchProviderData()
-  }, [providerUuid])
-
-  // Pull manifest on component mount
-  useEffect(() => {
-    const pullManifestOnMount = async () => {
-      if (!providerUuid) return
-
-      try {
-        // Call the pull_manifest API silently on page load
-        await providersApi.pullManifest({
-          provider_uuid: providerUuid,
-        })
-
-        // Refresh provider data to get updated manifest
-        const updatedProviderData = await providersApi.getProvider({
-          provider_uuid: providerUuid,
-        })
-        setProviderData(updatedProviderData)
-      } catch (error) {
-        // Silently fail - don't show error to user on initial load
-        console.error('Error pulling manifest on mount:', error)
-      }
-    }
-
-    pullManifestOnMount()
   }, [providerUuid])
 
   // Generate identifiers from provider data
@@ -150,7 +126,7 @@ export default function DashboardPage() {
       progress = 100
       updateToast(loadingToastId, { progress })
 
-      // Refresh provider data to get updated manifest
+      // Refresh provider data to get updated manifest and sources
       const updatedProviderData = await providersApi.getProvider({
         provider_uuid: providerUuid,
       })
@@ -173,17 +149,27 @@ export default function DashboardPage() {
       setTimeout(() => {
         setIsRefreshDisabled(false)
       }, 20000)
-    } catch (error) {
+    } catch (error: any) {
       hasCompleted = true
       clearInterval(progressInterval)
       setIsRefreshing(false)
 
-      updateToast(loadingToastId, {
-        type: 'error',
-        title: 'Refresh failed',
-        message: error instanceof Error ? error.message : 'Failed to refresh manifest',
-        isLoading: false,
-      })
+      // Check if it's a 423 (Locked) error
+      if (error?.status === 423 || error?.response?.status === 423) {
+        updateToast(loadingToastId, {
+          type: 'error',
+          title: 'Request blocked',
+          message: 'Too many requests. Please try again later.',
+          isLoading: false,
+        })
+      } else {
+        updateToast(loadingToastId, {
+          type: 'error',
+          title: 'Refresh failed',
+          message: error instanceof Error ? error.message : 'Failed to refresh manifest',
+          isLoading: false,
+        })
+      }
 
       // Re-enable refresh button after 20 seconds even on error
       setTimeout(() => {
@@ -381,8 +367,9 @@ export default function DashboardPage() {
     })
 
     try {
-      // Use the full_path directly as a URL
-      const response = await fetch(fullPath)
+      // Use the download_datalake_file endpoint with preview=true
+      const url = `${API_CONFIG.BASE_URL}/download_datalake_file?file_path=${encodeURIComponent(fullPath)}&preview=true`
+      const response = await fetch(url)
 
       if (!response.ok) {
         throw new Error(`Failed to load file: ${response.statusText}`)
@@ -425,22 +412,23 @@ export default function DashboardPage() {
     })
 
     try {
-      // Use the full_path directly as a URL
-      const response = await fetch(fullPath)
+      // Use the download_datalake_file endpoint with preview=false
+      const url = `${API_CONFIG.BASE_URL}/download_datalake_file?file_path=${encodeURIComponent(fullPath)}&preview=false`
+      const response = await fetch(url)
 
       if (!response.ok) {
         throw new Error(`Download failed: ${response.statusText}`)
       }
 
       const blob = await response.blob()
-      const url = window.URL.createObjectURL(blob)
+      const blobUrl = window.URL.createObjectURL(blob)
       const link = document.createElement('a')
-      link.href = url
+      link.href = blobUrl
       link.download = filename
       document.body.appendChild(link)
       link.click()
       document.body.removeChild(link)
-      window.URL.revokeObjectURL(url)
+      window.URL.revokeObjectURL(blobUrl)
 
       updateToast(loadingToastId, {
         type: 'success',

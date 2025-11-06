@@ -1,10 +1,10 @@
 // API Configuration
 export const API_CONFIG = {
   // In development, use proxy to bypass CORS
-  // In production, use direct API URL
+  // In production, use direct API URL from environment variable
   BASE_URL: import.meta.env.DEV
     ? '/api'
-    : 'https://i08ggsggwokooc84coo4c08o.serverfarm.knowledgeinnovation.eu',
+    : import.meta.env.VITE_API_URL,
   ENDPOINTS: {
     QUALITY_LINK: '',
   },
