@@ -48,7 +48,7 @@ services:
     ports:
       - "${DRAGONFLY_PORT}:6379"
     volumes:
-      - dragonfly_data:${DRAGONFLY_DATA_DIR}
+      - dragonfly_data:/data
     depends_on:
       - frontend
     restart: unless-stopped
@@ -62,7 +62,7 @@ services:
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
     command: minio server ${MINIO_DATA_DIR} --console-address "0.0.0.0:9001"
     volumes:
-      - minio_data:${MINIO_DATA_DIR}
+      - minio_data:/data
     ports:
       - "${MINIO_API_PORT}:9000"
       - "${MINIO_CONSOLE_PORT}:9001"
@@ -91,8 +91,8 @@ services:
     ports:
       - "${MAGEAI_PORT}:6789"
     volumes:
-      - mageai_projects:${MAGEAI_BASE_PATH}
-      - mageai_data:${MAGEAI_BASE_PATH}/${MAGEAI_PROJECT_NAME}/mage_data
+      - mageai_projects:/home/src
+      - mageai_data:/home/src/ql/mage_data
     depends_on:
       - postgres
       - dragonfly
