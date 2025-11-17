@@ -99,6 +99,7 @@ services:
       - minio
       - frontend
       - backend
+      - fuseki
     restart: unless-stopped
 
 
@@ -125,11 +126,38 @@ services:
       - dragonfly
       - minio
       - frontend
+      - fuseki
     restart: unless-stopped
 
 
+  fuseki:
+    image: ${FUSEKI_IMAGE}
+    container_name: ${FUSEKI_CONTAINER_NAME}
+    environment:
+      ADMIN_PASSWORD: ${FUSEKI_ADMIN_PASSWORD}
+      JVM_ARGS: ${FUSEKI_JVM_ARGS}
+      ENABLE_UPDATE: ${FUSEKI_ENABLE_UPDATE}
+      ENABLE_DATA_WRITE: ${FUSEKI_ENABLE_DATA_WRITE}
+      FUSEKI_DATASET_1: ${FUSEKI_DATASET_NAME}
+      FUSEKI_DATASET_1_TDB2: ${FUSEKI_TDB2_ENABLED}
+    volumes:
+      - fuseki-data:/fuseki-base/databases
+      - fuseki-config:/fuseki-base/configuration
+      - fuseki-backups:/fuseki-base/backups
+    ports:
+      - "${FUSEKI_PORT}:3030"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3030/$/ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
 
 volumes:
+  fuseki-data:
+  fuseki-config:
+  fuseki-backups:
   postgres_data:
   dragonfly_data:
   minio_data:
