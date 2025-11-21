@@ -10,8 +10,6 @@ services:
     ports:
       - "${FRONTEND_PORT}:3000"
     restart: unless-stopped
-
-
   postgres:
     image: ${POSTGRES_IMAGE}
     container_name: ${POSTGRES_CONTAINER_NAME}
@@ -153,14 +151,38 @@ services:
       timeout: 10s
       retries: 3
 
+      
+  fuseki-2:
+    image: ${FUSEKI2_IMAGE}
+    container_name: ${FUSEKI2_CONTAINER_NAME}
+    environment:
+      ADMIN_PASSWORD: ${FUSEKI2_ADMIN_PASSWORD}
+      ENABLE_DATA_WRITE: ${FUSEKI2_ENABLE_DATA_WRITE}
+      ENABLE_UPDATE: ${FUSEKI2_ENABLE_UPDATE}
+      ENABLE_SHACL: ${FUSEKI2_ENABLE_SHACL}
+      QUERY_TIMEOUT: ${FUSEKI2_QUERY_TIMEOUT}
+      JVM_ARGS: ${FUSEKI2_JVM_ARGS}
+    volumes:
+      - fuseki2-data:/fuseki-base/databases
+      - fuseki2-config:/fuseki-base/configuration
+    ports:
+      - "${FUSEKI2_PORT}:3030"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3030/$/ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
 
 volumes:
   fuseki-data:
   fuseki-config:
   fuseki-backups:
+  fuseki2-data:
+  fuseki2-config:
   postgres_data:
   dragonfly_data:
   minio_data:
   mageai_projects:
   mageai_data:
-  
