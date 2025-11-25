@@ -1,0 +1,85 @@
+#################################################################
+#
+# QualityLink examples
+# --------------------
+#
+# This file contains some example data that is aligned with
+# the QualityLink Application Profile.
+#
+# It has been tested with the SHACL Play! Validator:
+# https://shacl-play.sparna.fr/play/validate
+#
+#################################################################
+
+# QualityLink prefix
+@prefix ql: <http://data.quality-link.eu/ontology/v1#> .
+# RDF basics
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+# European Learning Model (ELM)
+@prefix elm: <http://data.europa.eu/snb/model/elm/> .
+@prefix loq: <http://data.europa.eu/snb/model/ap/loq-constraints/> .
+# Other used ontologies
+@prefix foaf: <http://xmlns.com/foaf/0.1/> .
+@prefix adms: <http://www.w3.org/ns/adms#> .
+@prefix cc: <http://creativecommons.org/ns#> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+
+<http://data.quality-link.eu/examples/provider/AT0005>
+    a ql:HigherEducationInstitution ;
+    adms:identifier [
+        a ql:OrgRegIdentifier ;
+        elm:schemeId ql:OrgReg ;
+        skos:notation "AT0005" ;
+    ] .
+
+<urn:schac:courseId:uni-lj.si:123>
+    a ql:LearningOpportunitySpecification ;
+    ql:isActive true ;
+    ql:version "1.0" ;
+    dcterms:title "Computer Science - Linked Open Data"@en ;
+    dcterms:description "This course in computer science focuses on linked open data and concepts such as RDF."@en ;
+    dcterms:language <http://publications.europa.eu/resource/authority/language/HBS> ;
+    elm:learningOutcome [
+        a elm:LearningOutcome ;
+        dcterms:title "The learner is able to define and explain basic RDF concepts."@en ;
+    ], [ 
+        a elm:LearningOutcome ;
+        dcterms:title "The learner is able to explain different serialisation formats for RDF data."@en ;
+    ] ;
+    dcterms:publisher <http://data.quality-link.eu/examples/provider/AT0005> ;
+    elm:ISCEDFCode <http://data.europa.eu/snb/isced-f/0611> .
+
+<http://data.quality-link.eu/examples/learning-opportunity/4711/sose2025>
+    a ql:LearningOpportunityInstance ;
+    dcterms:title "Computer Science - Linked Open Data"@en ;
+    elm:learningAchievementSpecification <http://data.quality-link.eu/examples/learning-opportunity/4711> ;
+    elm:defaultLanguage <http://publications.europa.eu/resource/authority/language/HBS> ;
+    foaf:homepage "https://quality-link.eu/" ;
+    elm:providedBy <http://data.quality-link.eu/examples/provider/AT0005> ;
+    dcterms:temporal [
+        a dcterms:PeriodOfTime ;
+        skos:prefLabel "Sommersemester 2025"@de ;
+    ] .
+
+<http://course.are.cool/123>
+    a ql:LearningOpportunitySpecification ;
+    ql:isActive true ;
+    ql:version "1.0" ;
+    dcterms:title "Computer Science - Linked Open Data"@en ;
+    dcterms:description "This course in computer science focuses on linked open data and concepts such as RDF."@en ;
+    dcterms:language <http://publications.europa.eu/resource/authority/language/HBS> ;
+    elm:learningOutcome [
+        a elm:LearningOutcome ;
+        dcterms:title "The learner is able to define and explain basic RDF concepts."@en ;
+    ], [ 
+        a elm:LearningOutcome ;
+        dcterms:title "The learner is able to explain different serialisation formats for RDF data."@en ;
+    ] ;
+    dcterms:publisher <http://data.quality-link.eu/examples/provider/AT0005> ;
+    elm:ISCEDFCode <http://data.europa.eu/snb/isced-f/0611> .
+
