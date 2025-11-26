@@ -51,8 +51,21 @@ CREATE TABLE IF NOT EXISTS source (
     FOREIGN KEY (source_version_uuid) REFERENCES source_version(source_version_uuid) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS transaction (
+    trans_uuid UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    provider_uuid UUID NOT NULL,
+    source_version_uuid UUID NOT NULL,
+    created_at_date DATE NOT NULL DEFAULT CURRENT_DATE,
+    created_at_date_time TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    FOREIGN KEY (provider_uuid) REFERENCES provider(provider_uuid),
+    FOREIGN KEY (source_version_uuid) REFERENCES source_version(source_version_uuid),
+    UNIQUE (provider_uuid, source_version_uuid, created_at_date)
+);
+
 CREATE INDEX IF NOT EXISTS idx_provider_deqar_id ON provider(deqar_id);
 CREATE INDEX IF NOT EXISTS idx_provider_name_concat ON provider(name_concat);
 CREATE INDEX IF NOT EXISTS idx_source_version_provider_uuid ON source_version(provider_uuid);
 CREATE INDEX IF NOT EXISTS idx_source_source_version_uuid ON source(source_version_uuid);
 CREATE INDEX IF NOT EXISTS idx_source_source_type ON source(source_type);
+CREATE INDEX IF NOT EXISTS idx_transaction_provider_uuid ON transaction(provider_uuid);
+CREATE INDEX IF NOT EXISTS idx_transaction_source_version_uuid ON transaction(source_version_uuid);
