@@ -498,9 +498,92 @@ async def queue_provider_data(
     source_version_uuid: UUID = Query(..., title="Source Version UUID"),
     source_uuid: UUID = Query(..., title="Source UUID"),
     source_path: str = Query(..., title="Source Path"),
+    background_tasks: BackgroundTasks = BackgroundTasks(),
     db: Session = Depends(get_db)
 ) -> Dict[str, Any]:
+    
+    lock_uuid = str(uuid.uuid4())
+    lock_key_pattern = f"pull_manifest:{provider_uuid}:*"
+    lock_key = f"pull_manifest:{provider_uuid}:{lock_uuid}"
+
     try:
+        existing_locks = redis_client.keys(lock_key_pattern)
+        
+        if existing_locks:
+            return JSONResponse(
+                status_code=423,
+                content={
+                    "status": "busy",
+                    "message": "This provider is currently being processed. Please try again later.",
+                    "provider_uuid": str(provider_uuid)
+                }
+            )
+        
+        redis_client.setex(lock_key, 60, "locked")
+
+        requested_version_query = text("""
+            SELECT version_date, version_id
+            FROM source_version
+            WHERE provider_uuid = :provider_uuid
+            AND source_version_uuid = :source_version_uuid
+        """)
+
+        requested_version = db.execute(requested_version_query, {
+            "provider_uuid": provider_uuid,
+            "source_version_uuid": source_version_uuid
+        }).fetchone()
+        
+        if not requested_version:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Source version not found for the specified provider"
+            )
+        
+        requested_version_date = requested_version[0]
+        requested_version_id = requested_version[1]
+
+        latest_version_query = text("""
+            SELECT source_version_uuid, version_date, version_id
+            FROM source_version
+            WHERE provider_uuid = :provider_uuid
+            ORDER BY version_date DESC, version_id DESC
+            LIMIT 1
+        """)
+
+        latest_version = db.execute(latest_version_query, {
+            "provider_uuid": provider_uuid
+        }).fetchone()
+        
+        if not latest_version:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="No source versions found for this provider"
+            )
+        
+        latest_version_uuid = str(latest_version[0])
+        latest_version_date = latest_version[1]
+        latest_version_id = latest_version[2]
+
+
+        # if requested_version_date != latest_version_date or requested_version_id != latest_version_id:
+        if latest_version_uuid != str(source_version_uuid):
+            return JSONResponse(
+                status_code=426,
+                content={
+                    "status": "outdated",
+                    "message": "You are using an outdated version for this provider. Please refresh your page to retrieve the latest configurations.",
+                    "provider_uuid": str(provider_uuid),
+                    "requested_version": {
+                        "version_date": requested_version_date.isoformat(),
+                        "version_id": requested_version_id
+                    },
+                    "latest_version": {
+                        "version_date": latest_version_date.isoformat(),
+                        "version_id": latest_version_id
+                    }
+                }
+            )
+
         provider_data = {
             "provider_uuid": str(provider_uuid),
             "source_version_uuid": str(source_version_uuid),
@@ -530,10 +613,10 @@ async def queue_provider_data(
                 }
             }
             
-        except redis.RedisError as e:
+        except redis.RedisError as redis_err:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Failed to queue data: Redis error: {str(e)}"
+                detail=f"Redis error: {str(redis_err)}"
             )
             
     except HTTPException as http_exc:
@@ -543,6 +626,8 @@ async def queue_provider_data(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to queue provider data: {str(e)}"
         )
+    finally:
+        background_tasks.add_task(redis_client.delete, lock_key)
 
 
 @app.get("/list_datalake_dates", tags=["Datalake"], status_code=status.HTTP_200_OK)
