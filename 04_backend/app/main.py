@@ -30,7 +30,7 @@ app = FastAPI(title="QL-Backend")
 origins = [
     "http://localhost:3000",  
     "http://frontend:3000",   
-    "https://r0ggc40go8gckosso48osksk.serverfarm.knowledgeinnovation.eu",
+    os.getenv("SERVICE_URL_FRONTEND", "https://dashboard.app.quality-link.eu")
 ]
 
 app.add_middleware(
