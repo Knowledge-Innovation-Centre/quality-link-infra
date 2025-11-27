@@ -34,28 +34,29 @@ export default function DashboardPage() {
     last_file_pushed_path: string | null
   }>>({})
 
-  // Fetch provider data on component mount
-  useEffect(() => {
-    const fetchProviderData = async () => {
-      if (!providerUuid) {
-        setProviderError('No provider ID provided')
-        setProviderLoading(false)
-        return
-      }
-
-      try {
-        setProviderLoading(true)
-        setProviderError(null)
-        const response = await providersApi.getProvider({ provider_uuid: providerUuid })
-        setProviderData(response)
-      } catch (err) {
-        setProviderError(err instanceof Error ? err.message : 'Failed to fetch provider data')
-        console.error('Error fetching provider:', err)
-      } finally {
-        setProviderLoading(false)
-      }
+  // Fetch provider data function (extracted to allow re-fetching on 426)
+  const fetchProviderData = async () => {
+    if (!providerUuid) {
+      setProviderError('No provider ID provided')
+      setProviderLoading(false)
+      return
     }
 
+    try {
+      setProviderLoading(true)
+      setProviderError(null)
+      const response = await providersApi.getProvider({ provider_uuid: providerUuid })
+      setProviderData(response)
+    } catch (err) {
+      setProviderError(err instanceof Error ? err.message : 'Failed to fetch provider data')
+      console.error('Error fetching provider:', err)
+    } finally {
+      setProviderLoading(false)
+    }
+  }
+
+  // Fetch provider data on component mount
+  useEffect(() => {
     fetchProviderData()
   }, [providerUuid])
 
@@ -330,17 +331,55 @@ export default function DashboardPage() {
           message: 'Data source has been queued for fetching. Results will appear shortly.',
         })
       }, 500)
-    } catch (error) {
+    } catch (error: any) {
       hasCompleted = true
       clearInterval(progressInterval)
       setIsDataLakeRefreshing(false)
 
-      updateToast(loadingToastId, {
-        type: 'error',
-        title: 'Queue failed',
-        message: error instanceof Error ? error.message : 'Failed to queue data source fetch',
-        isLoading: false,
-      })
+      const statusCode = error?.status || error?.response?.status
+
+      if (statusCode === 423) {
+        // 423 Locked - Queue is locked, similar to manifest handling
+        updateToast(loadingToastId, {
+          type: 'error',
+          title: 'Request blocked',
+          message: 'Queue is currently locked. Please try again later.',
+          isLoading: false,
+        })
+      } else if (statusCode === 426) {
+        // 426 Upgrade Required - Manifest config changed, need to refresh page
+        updateToast(loadingToastId, {
+          type: 'warning',
+          title: 'Configuration updated',
+          message: 'Manifest configuration has changed. Refreshing page...',
+          isLoading: false,
+        })
+        // Automatically refresh provider data to get latest manifest config
+        setTimeout(() => {
+          fetchProviderData()
+        }, 1500)
+      } else if (statusCode === 404) {
+        updateToast(loadingToastId, {
+          type: 'error',
+          title: 'Not found',
+          message: 'The requested resource was not found.',
+          isLoading: false,
+        })
+      } else if (statusCode === 500) {
+        updateToast(loadingToastId, {
+          type: 'error',
+          title: 'Server error',
+          message: 'An internal server error occurred. Please try again later.',
+          isLoading: false,
+        })
+      } else {
+        updateToast(loadingToastId, {
+          type: 'error',
+          title: 'Queue failed',
+          message: error instanceof Error ? error.message : 'Failed to queue data source fetch',
+          isLoading: false,
+        })
+      }
     }
   }
 
