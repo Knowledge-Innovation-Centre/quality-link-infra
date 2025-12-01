@@ -502,25 +502,20 @@ async def queue_provider_data(
     db: Session = Depends(get_db)
 ) -> Dict[str, Any]:
     
-    lock_uuid = str(uuid.uuid4())
-    lock_key_pattern = f"pull_manifest:{provider_uuid}:*"
-    lock_key = f"pull_manifest:{provider_uuid}:{lock_uuid}"
+
+    lock_key = f"pull_manifest:{provider_uuid}"
 
     try:
-        existing_locks = redis_client.keys(lock_key_pattern)
-        
-        if existing_locks:
+        if redis_client.exists(lock_key):
             return JSONResponse(
                 status_code=423,
                 content={
                     "status": "busy",
-                    "message": "This provider is currently being processed. Please try again later.",
+                    "message": "Manifest is currently being pulled for this provider. Please try again later.",
                     "provider_uuid": str(provider_uuid)
                 }
             )
         
-        redis_client.setex(lock_key, 60, "locked")
-
         requested_version_query = text("""
             SELECT version_date, version_id
             FROM source_version
@@ -565,7 +560,6 @@ async def queue_provider_data(
         latest_version_id = latest_version[2]
 
 
-        # if requested_version_date != latest_version_date or requested_version_id != latest_version_id:
         if latest_version_uuid != str(source_version_uuid):
             return JSONResponse(
                 status_code=426,
@@ -626,8 +620,6 @@ async def queue_provider_data(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to queue provider data: {str(e)}"
         )
-    finally:
-        background_tasks.add_task(redis_client.delete, lock_key)
 
 
 @app.get("/list_datalake_dates", tags=["Datalake"], status_code=status.HTTP_200_OK)
@@ -859,36 +851,57 @@ def prepare_test_combinations(schac_identifier: str, website_link: Optional[str]
     return test_combinations
 
 
+def safe_release_lock(redis_client, lock_key: str, lock_uuid: str) -> bool:
+
+    lua_script = """
+    if redis.call("get", KEYS[1]) == ARGV[1] then
+        return redis.call("del", KEYS[1])
+    else
+        return 0
+    end
+    """
+    try:
+        result = redis_client.eval(lua_script, 1, lock_key, lock_uuid)
+        if result == 1:
+            print(f"✅ Lock released: {lock_key}")
+            return True
+        else:
+            print(f"⚠️ Lock not owned or already expired: {lock_key}")
+            return False
+    except Exception as e:
+        print(f"❌ Error releasing lock: {e}")
+        return False
+
+
 @app.post("/pull_manifest_v2", tags=["Providers"])
 async def pull_manifest_v2(
     provider_uuid: UUID = Query(..., title="Provider UUID"),
     background_tasks: BackgroundTasks = BackgroundTasks(),
     db: Session = Depends(get_db)
 ) -> Dict[str, Any]:
+    
+    lock_key = f"pull_manifest:{provider_uuid}"
     lock_uuid = str(uuid.uuid4())
-    lock_key_pattern = f"pull_manifest:{provider_uuid}:*"
-    lock_key = f"pull_manifest:{provider_uuid}:{lock_uuid}"
+    
+    acquired = redis_client.set(lock_key, lock_uuid, ex=60, nx=True)
+    
+    if not acquired:
+        return JSONResponse(
+            status_code=423,
+            content={
+                "status": "busy",
+                "message": "This provider is currently being processed. Please try again later.",
+                "provider_uuid": str(provider_uuid)
+            }
+        )
     
     try:
-        existing_locks = redis_client.keys(lock_key_pattern)
-        
-        if existing_locks:
-            return JSONResponse(
-                status_code=423,
-                content={
-                    "status": "busy",
-                    "message": "This provider is currently being processed. Please try again later.",
-                    "provider_uuid": str(provider_uuid)
-                }
-            )
-        
-        redis_client.setex(lock_key, 60, "locked")
-        
         query = text("""
             SELECT metadata
             FROM provider
             WHERE provider_uuid = :provider_uuid
         """)
+
         result = db.execute(query, {"provider_uuid": provider_uuid}).fetchone()
         if not result:
             raise HTTPException(
@@ -1072,21 +1085,23 @@ async def pull_manifest_v2(
     except HTTPException as http_exc:
         db.rollback()
         raise http_exc
+
     except redis.RedisError as redis_err:
         db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Redis error: {str(redis_err)}"
         )
+
     except Exception as e:
         db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Unexpected error: {str(e)}"
         )
-    finally:
-        background_tasks.add_task(redis_client.delete, lock_key)
 
+    finally:
+        background_tasks.add_task(safe_release_lock, redis_client, lock_key, lock_uuid)
 
 if __name__ == "__main__":
     import uvicorn
