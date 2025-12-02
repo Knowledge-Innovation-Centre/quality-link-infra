@@ -562,7 +562,7 @@ async def queue_provider_data(
 
         if latest_version_uuid != str(source_version_uuid):
             return JSONResponse(
-                status_code=426,
+                status_code=410,
                 content={
                     "status": "outdated",
                     "message": "You are using an outdated version for this provider. Please refresh your page to retrieve the latest configurations.",

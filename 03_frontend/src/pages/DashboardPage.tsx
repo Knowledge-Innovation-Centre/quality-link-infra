@@ -346,7 +346,7 @@ export default function DashboardPage() {
           message: 'Queue is currently locked. Please try again later.',
           isLoading: false,
         })
-      } else if (statusCode === 426) {
+      } else if (statusCode === 410) {
         // 426 Upgrade Required - Manifest config changed, need to refresh page
         updateToast(loadingToastId, {
           type: 'warning',
