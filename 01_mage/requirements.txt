@@ -1,6 +1,9 @@
+annotated-types==0.7.0
 argon2-cffi==25.1.0
 argon2-cffi-bindings==25.1.0
 arro3-core==0.5.1
+cachetools==6.2.3
+camel-converter==5.0.0
 certifi==2025.8.3
 cffi==1.17.1
 charset-normalizer==3.4.3
@@ -9,10 +12,14 @@ cloudpickle==3.1.1
 dask==2025.7.0
 deltalake==1.1.4
 Deprecated==1.2.18
+frozendict==2.4.7
 fsspec==2025.7.0
 idna==3.10
 locket==1.0.0
+lxml==6.0.2
+meilisearch==0.38.0
 minio==7.2.16
+numpy==2.3.5
 packaging==25.0
 pandas==2.3.1
 partd==1.4.2
@@ -20,6 +27,9 @@ psycopg2-binary==2.9.10
 pyarrow==21.0.0
 pycparser==2.22
 pycryptodome==3.23.0
+pydantic==2.12.5
+pydantic_core==2.41.5
+PyLD==2.0.4
 pyparsing==3.2.3
 python-dateutil==2.9.0.post0
 pytz==2025.2
@@ -30,6 +40,7 @@ requests==2.32.4
 six==1.17.0
 toolz==1.0.0
 tqdm==4.67.1
+typing-inspection==0.4.2
 typing_extensions==4.14.1
 tzdata==2025.2
 urllib3==2.5.0
