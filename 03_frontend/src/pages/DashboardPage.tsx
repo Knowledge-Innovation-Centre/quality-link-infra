@@ -509,10 +509,11 @@ export default function DashboardPage() {
           month: 'short',
           year: 'numeric',
           hour: '2-digit',
-          minute: '2-digit'
+          minute: '2-digit',
+          timeZone: 'UTC'
         }),
         isPushed: file.push_status, // Use push_status from API (v2)
-        pushDate: fileDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }),
+        pushDate: fileDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }),
         fullPath: file.full_path,
       }
     })
@@ -525,7 +526,8 @@ export default function DashboardPage() {
         month: 'short',
         year: 'numeric',
         hour: '2-digit',
-        minute: '2-digit'
+        minute: '2-digit',
+        timeZone: 'UTC'
       })}`,
       fullPath: metadata.last_file_pushed_path,
     } : undefined
@@ -535,7 +537,7 @@ export default function DashboardPage() {
       name: sourceName,
       source_name: source.source_name,
       type: source.source_type.toUpperCase(),
-      pushed: createdDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }),
+      pushed: createdDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }),
       latestFile: latestFile?.filename || sourceName,
       files: mappedFiles.length > 0 ? mappedFiles : [],
       latestPushedFile,
@@ -568,14 +570,16 @@ export default function DashboardPage() {
                 month: '2-digit',
                 year: 'numeric',
                 hour: '2-digit',
-                minute: '2-digit'
+                minute: '2-digit',
+                timeZone: 'UTC'
               })
             : new Date(providerData.provider.created_at).toLocaleDateString('en-GB', {
                 day: '2-digit',
                 month: '2-digit',
                 year: 'numeric',
                 hour: '2-digit',
-                minute: '2-digit'
+                minute: '2-digit',
+                timeZone: 'UTC'
               })
           }
         />
