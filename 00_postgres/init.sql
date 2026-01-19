@@ -62,6 +62,19 @@ CREATE TABLE IF NOT EXISTS transaction (
     UNIQUE (provider_uuid, source_version_uuid, created_at_date)
 );
 
+CREATE TABLE IF NOT EXISTS ql_cred (
+    cred_uuid UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    public_key TEXT NOT NULL,
+    private_key TEXT NOT NULL,
+    key_algorithm VARCHAR NOT NULL DEFAULT 'RSA',
+    key_size INTEGER NOT NULL DEFAULT 4096,
+    public_exponent INTEGER DEFAULT 65537,
+    key_format VARCHAR DEFAULT 'PEM',
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(), 
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
 CREATE INDEX IF NOT EXISTS idx_provider_deqar_id ON provider(deqar_id);
 CREATE INDEX IF NOT EXISTS idx_provider_name_concat ON provider(name_concat);
 CREATE INDEX IF NOT EXISTS idx_source_version_provider_uuid ON source_version(provider_uuid);
