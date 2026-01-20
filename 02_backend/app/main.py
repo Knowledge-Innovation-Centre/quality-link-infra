@@ -22,6 +22,7 @@ import io
 import dns.resolver
 import yaml
 from urllib.parse import urlparse
+from fastapi.responses import PlainTextResponse
 
 load_dotenv()
 
@@ -1102,6 +1103,74 @@ async def pull_manifest_v2(
 
     finally:
         background_tasks.add_task(safe_release_lock, redis_client, lock_key, lock_uuid)
+
+
+@app.get("/api/v1/public-key")
+async def get_public_key(db: Session = Depends(get_db)):
+    try:
+        query = text("""
+            SELECT 
+                public_key,
+                created_at,
+                updated_at
+            FROM ql_cred 
+            WHERE is_active = TRUE 
+            ORDER BY created_at DESC 
+            LIMIT 1
+        """)
+        
+        result = db.execute(query).fetchone()
+        
+        if not result:
+            raise HTTPException(
+                status_code=404, 
+                detail="No active public key found"
+            )
+        
+        return {
+            "public_key": result[0],
+            "created_at": result[1].isoformat() if result[1] else None,
+            "updated_at": result[2].isoformat() if result[2] else None
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error retrieving public key: {str(e)}"
+        )
+
+
+@app.get("/api/v1/public-key/pem", response_class=PlainTextResponse)
+async def get_public_key_pem(db: Session = Depends(get_db)):
+    try:
+        query = text("""
+            SELECT public_key
+            FROM ql_cred 
+            WHERE is_active = TRUE 
+            ORDER BY created_at DESC 
+            LIMIT 1
+        """)
+        
+        result = db.execute(query).fetchone()
+        
+        if not result:
+            raise HTTPException(
+                status_code=404, 
+                detail="No active public key found"
+            )
+        
+        return result[0]
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error retrieving public key: {str(e)}"
+        )
+
 
 if __name__ == "__main__":
     import uvicorn
