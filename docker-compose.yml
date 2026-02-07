@@ -16,14 +16,13 @@ services:
       - backend
 
   postgres:
-    image: postgres:18-alpine
+    build: ./00_postgres
     environment:
       POSTGRES_USER: quality_link
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: backend
     volumes:
       - postgres_data:/var/lib/postgresql
-      - ./00_postgres:/docker-entrypoint-initdb.d:ro
     restart: unless-stopped
     command: postgres -c max_connections=100 -c shared_buffers=512MB
 
