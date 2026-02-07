@@ -64,15 +64,32 @@ services:
     command: mage start ql
     environment:
       USER_CODE_PATH: /home/src/ql
+      GIT_REPO_LINK: https://github.com/Knowledge-Innovation-Centre/quality-link-workflows.git
+      GIT_REPO_PATH: /home/src/ql
+      GIT_SYNC_ON_START: 1
       MAGE_DATABASE_CONNECTION_URL: postgresql://quality_link:${POSTGRES_PASSWORD}@postgres:5432/mage
       REDIS_URL: redis://:${DRAGONFLY_PASSWORD}@dragonfly:6379/0
       REQUIRE_USER_AUTHENTICATION: 1
       DEFAULT_OWNER_EMAIL: ${DEFAULT_OWNER_EMAIL}
       DEFAULT_OWNER_USERNAME: ${DEFAULT_OWNER_USERNAME}
       DEFAULT_OWNER_PASSWORD: ${DEFAULT_OWNER_PASSWORD}
-      GIT_REPO_LINK: https://github.com/Knowledge-Innovation-Centre/quality-link-workflows.git
-      GIT_REPO_PATH: /home/src/ql
-      GIT_SYNC_ON_START: 1
+      MINIO_HOST: minio
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      MINIO_BUCKET_NAME: ${BUCKET_NAME:-quality-link-storage}
+      DRAGONFLY_HOST: dragonfly
+      DRAGONFLY_PASSWORD: ${DRAGONFLY_PASSWORD}
+      POSTGRES_USER: quality_link
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB_NAME: backend
+      FUSEKI_USERNAME: admin
+      FUSEKI_PASSWORD: ${FUSEKI_ADMIN_PASSWORD}
+      FUSEKI_URL: http://fuseki:3030
+      MEILISEARCH_URL: ${MEILISEARCH_URL}
+      MEILISEARCH_INDEX: ${MEILISEARCH_INDEX:-ql_courses}
+      MEILISEARCH_API_KEY: ${MEILISEARCH_API_KEY}
     volumes:
       - mageai_projects:/home/src
     depends_on:
