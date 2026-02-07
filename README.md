@@ -111,26 +111,58 @@ quality-link-infra/
 See `.example.env` for all available options. Key configurations:
 **PostgreSQL**
 ```bash
-POSTGRES_USER=quality_link
 POSTGRES_PASSWORD=<secure_password>
-POSTGRES_DB=quality_link_db
 ```
 **Dragonfly (Redis)**
 ```bash
 DRAGONFLY_PASSWORD=<secure_password>
-DRAGONFLY_CACHE_MODE=true
-DRAGONFLY_SNAPSHOT_CRON=* * * * *  # Snapshot every minute
 ```
 **MinIO**
 ```bash
 MINIO_ROOT_USER=minio_user
 MINIO_ROOT_PASSWORD=<secure_password>
-BUCKET_NAME=quality-link-storage
+```
+**Fuseki**
+```bash
+FUSEKI_ADMIN_PASSWORD=<secure_password>
+```
+**Mage AI**
+```bash
+DEFAULT_OWNER_EMAIL=your_email@example.com
+DEFAULT_OWNER_USERNAME=your_username
+DEFAULT_OWNER_PASSWORD=<secure_password>
 ```
 **Backend**
 ```bash
-BACKEND_PORT=8000
-BACKEND_REDIS_URL=redis://:${DRAGONFLY_PASSWORD}@${DRAGONFLY_CONTAINER_NAME}:6379/1
+DB_NAME=backend
+```
+**Frontend**
+```bash
+VITE_API_URL=<backend external URL>
+VITE_RECAPTCHA_SITE_KEY=<API key for Recaptcha>
+```
+### Expose Ports
+This repository is designed for deployment using [Coolify](https://coolify.io/). Hence no ports are exposed in the Docker Compose config by default. To expose ports for local development or testing, create a `docker-compose.override.yml` file using the following example:
+```yaml
+services:
+  frontend:
+    ports:
+      - "3000:3000"
+  postgres:
+    ports:
+      - "5432:5432"
+  minio:
+    ports:
+      - "9001:9001"
+  mageai:
+    ports:
+      - "6789:6789"
+  backend:
+    ports:
+      - "8000:8000"
+  fuseki:
+    ports:
+      - "3030:3030"
 ```
 ### Database Schema
 The PostgreSQL database includes the following tables:

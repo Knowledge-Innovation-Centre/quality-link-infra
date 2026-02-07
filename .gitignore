@@ -217,6 +217,10 @@ package-lock.json
 .vite/
 dist/
 
+# local Docker Compose override
+docker-compose.override.yml
+docker-compose.override.yaml
+
 # Windows system files
 nul
 Thumbs.db

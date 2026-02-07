@@ -5,18 +5,22 @@ services:
   frontend:
     build:
       context: ./03_frontend
-    ports:
-      - "${FRONTEND_PORT:-3333}:3000"
+      args:
+        VITE_RECAPTCHA_SITE_KEY: ${VITE_RECAPTCHA_SITE_KEY}
+        VITE_API_URL: ${VITE_API_URL}
     restart: unless-stopped
+    environment:
+      - VITE_API_URL
+      - VITE_RECAPTCHA_SITE_KEY
+    depends_on:
+      - backend
 
   postgres:
     image: postgres:18-alpine
     environment:
-      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_USER: quality_link
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB}
-    ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      POSTGRES_DB: backend
     volumes:
       - postgres_data:/var/lib/postgresql
       - ./00_postgres:/docker-entrypoint-initdb.d:ro
@@ -37,12 +41,8 @@ services:
       --hz=${DRAGONFLY_HZ:-100}
       --snapshot_cron="${DRAGONFLY_SNAPSHOT_CRON:-* * * * *}"
       --primary_port_http_enabled=false
-    ports:
-      - "${DRAGONFLY_PORT:-6379}:6379"
     volumes:
       - dragonfly_data:/data
-    depends_on:
-      - frontend
     restart: unless-stopped
 
   minio:
@@ -53,11 +53,6 @@ services:
     command: minio server /data --console-address "0.0.0.0:9001"
     volumes:
       - minio_data:/data
-    ports:
-      - "${MINIO_API_PORT:-9000}:9000"
-      - "${MINIO_CONSOLE_PORT:-9001}:9001"
-    depends_on:
-      - frontend
     restart: unless-stopped
 
   mageai:
@@ -69,7 +64,7 @@ services:
     command: mage start ql
     environment:
       USER_CODE_PATH: /home/src/ql
-      MAGE_DATABASE_CONNECTION_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/mage
+      MAGE_DATABASE_CONNECTION_URL: postgresql://quality_link:${POSTGRES_PASSWORD}@postgres:5432/mage
       REDIS_URL: redis://:${DRAGONFLY_PASSWORD}@dragonfly:6379/0
       REQUIRE_USER_AUTHENTICATION: 1
       DEFAULT_OWNER_EMAIL: ${DEFAULT_OWNER_EMAIL}
@@ -78,16 +73,12 @@ services:
       GIT_REPO_LINK: https://github.com/Knowledge-Innovation-Centre/quality-link-workflows.git
       GIT_REPO_PATH: /home/src/ql
       GIT_SYNC_ON_START: 1
-    ports:
-      - "${MAGEAI_PORT:-6789}:6789"
     volumes:
       - mageai_projects:/home/src
     depends_on:
       - postgres
       - dragonfly
       - minio
-      - frontend
-      - backend
       - fuseki
     restart: unless-stopped
 
@@ -95,24 +86,20 @@ services:
     build:
       context: ./02_backend
     environment:
-      DB_USER: ${POSTGRES_USER}
+      DB_USER: quality_link
       DB_PASSWORD: ${POSTGRES_PASSWORD}
       DB_HOST: postgres
       DB_PORT: 5432
-      DB_NAME: ${DB_NAME}
+      DB_NAME: backend
       BACKEND_REDIS_URL: redis://:${DRAGONFLY_PASSWORD}@dragonfly:6379/1
       MINIO_HOST: minio:9000
       MINIO_KEY: ${MINIO_ROOT_USER}
       MINIO_SECRET: ${MINIO_ROOT_PASSWORD}
       BUCKET_NAME: ${BUCKET_NAME:-quality-link-storage}
-    ports:
-      - "${BACKEND_PORT:-8000}:8000"
     depends_on:
       - postgres
       - dragonfly
       - minio
-      - frontend
-      - fuseki
     restart: unless-stopped
 
   fuseki:
@@ -126,8 +113,6 @@ services:
       FUSEKI_DATASET_1_TDB2: ${FUSEKI_TDB2_ENABLED:-true}
     volumes:
       - fuseki_data:/fuseki
-    ports:
-      - "${FUSEKI_PORT:-3031}:3030"
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3030/$/ping"]
