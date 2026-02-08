@@ -115,8 +115,9 @@ async def get_all_providers(
         where_clause = ""
         
         if search_provider:
-            where_clause = "WHERE provider_name ILIKE :search_term"
+            where_clause = "WHERE name_concat ILIKE :search_term OR eter_id LIKE :search_id OR deqar_id LIKE :search_id"
             params["search_term"] = f"%{search_provider.lower()}%"
+            params["search_id"] = f"{search_provider.upper()}%"
         
         count_query = text(f"SELECT COUNT(*) FROM provider {where_clause}")
         
@@ -129,6 +130,7 @@ async def get_all_providers(
             SELECT provider_uuid, deqar_id, eter_id, provider_name
             FROM provider
             {where_clause}
+            ORDER BY eter_id
             LIMIT :limit OFFSET :offset
         """)
         
