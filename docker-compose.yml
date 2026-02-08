@@ -86,6 +86,7 @@ services:
       FUSEKI_USERNAME: admin
       FUSEKI_PASSWORD: ${FUSEKI_ADMIN_PASSWORD}
       FUSEKI_URL: http://fuseki:3030
+      FUSEKI_DATASET_NAME: ${FUSEKI_DATASET_NAME:-qualitylink}
       MEILISEARCH_URL: ${MEILISEARCH_URL}
       MEILISEARCH_INDEX: ${MEILISEARCH_INDEX:-ql_courses}
       MEILISEARCH_API_KEY: ${MEILISEARCH_API_KEY}
@@ -125,8 +126,8 @@ services:
       JVM_ARGS: ${FUSEKI_JVM_ARGS:--Xmx2g -XX:+UseContainerSupport}
       ENABLE_UPDATE: ${FUSEKI_ENABLE_UPDATE:-true}
       ENABLE_DATA_WRITE: ${FUSEKI_ENABLE_DATA_WRITE:-true}
+      TDB: ${FUSEKI_TDB:-2}
       FUSEKI_DATASET_1: ${FUSEKI_DATASET_NAME:-qualitylink}
-      FUSEKI_DATASET_1_TDB2: ${FUSEKI_TDB2_ENABLED:-true}
     volumes:
       - fuseki_data:/fuseki
     restart: unless-stopped
