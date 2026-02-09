@@ -8,10 +8,12 @@ services:
       args:
         VITE_RECAPTCHA_SITE_KEY: ${VITE_RECAPTCHA_SITE_KEY}
         VITE_API_URL: ${VITE_API_URL}
+        VITE_RECAPTCHA_ENABLED: ${VITE_RECAPTCHA_ENABLED:-true}
     restart: unless-stopped
     environment:
       VITE_API_URL: ${VITE_API_URL}
       VITE_RECAPTCHA_SITE_KEY: ${VITE_RECAPTCHA_SITE_KEY}
+      VITE_RECAPTCHA_ENABLED: ${VITE_RECAPTCHA_ENABLED:-true}
     depends_on:
       - backend
 

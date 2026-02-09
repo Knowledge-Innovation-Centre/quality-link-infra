@@ -9,9 +9,10 @@ interface InstitutionSelectorProps {
 }
 
 export default function InstitutionSelector({ onSelect }: InstitutionSelectorProps) {
+  const recaptchaEnabled = import.meta.env.VITE_RECAPTCHA_ENABLED !== 'false';
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedProvider, setSelectedProvider] = useState<Provider | null>(null);
-  const [captchaVerified, setCaptchaVerified] = useState(false);
+  const [captchaVerified, setCaptchaVerified] = useState(!recaptchaEnabled);
   const [providers, setProviders] = useState<Provider[]>([]);
   const [loading, setLoading] = useState(false);
   const [showDropdown, setShowDropdown] = useState(false);
@@ -113,13 +114,15 @@ export default function InstitutionSelector({ onSelect }: InstitutionSelectorPro
           <p className="text-gray-700 leading-relaxed">This dashboard allows you to check if your education institution's data sources were discovered and harvested by the QualityLink aggregator.</p>
         </div>
 
-        <div className="flex justify-start">
-          <ReCAPTCHA
-            ref={recaptchaRef}
-            sitekey={recaptchaSiteKey}
-            onChange={handleCaptchaChange}
-          />
-        </div>
+        {recaptchaEnabled && (
+          <div className="flex justify-start">
+            <ReCAPTCHA
+              ref={recaptchaRef}
+              sitekey={recaptchaSiteKey}
+              onChange={handleCaptchaChange}
+            />
+          </div>
+        )}
 
         <div className="flex flex-col gap-3">
           <label className="text-base font-medium text-gray-900">Select your institution to start:</label>
