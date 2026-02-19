@@ -24,7 +24,17 @@ app.include_router(health.router)
 app.include_router(providers.router)
 app.include_router(manifest.router)
 app.include_router(datalake.router)
-app.include_router(credentials.router)
+
+# Public-key sub-app — wildcard CORS so any provider domain can fetch the key
+public_app = FastAPI()
+public_app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["GET"],
+    allow_headers=["*"],
+)
+public_app.include_router(credentials.router)
+app.mount("/api/v1", public_app)
 
 if __name__ == "__main__":
     import uvicorn

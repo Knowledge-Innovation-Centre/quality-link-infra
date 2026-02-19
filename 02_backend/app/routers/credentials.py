@@ -8,7 +8,7 @@ from database import get_db
 router = APIRouter()
 
 
-@router.get("/api/v1/public-key")
+@router.get("/public-key")
 async def get_public_key(db: Session = Depends(get_db)):
     try:
         result = db.execute(
@@ -36,7 +36,7 @@ async def get_public_key(db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail=f"Error retrieving public key: {str(e)}")
 
 
-@router.get("/api/v1/public-key/pem", response_class=PlainTextResponse)
+@router.get("/public-key/pem", response_class=PlainTextResponse)
 async def get_public_key_pem(db: Session = Depends(get_db)):
     try:
         result = db.execute(
