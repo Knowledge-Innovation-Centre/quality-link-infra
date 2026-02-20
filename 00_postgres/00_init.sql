@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS provider (
     deqar_id VARCHAR,
     eter_id VARCHAR,
     base_id INTEGER,
+    schac_code VARCHAR,
     metadata JSONB,
     manifest_json JSONB,
     name_concat VARCHAR,
