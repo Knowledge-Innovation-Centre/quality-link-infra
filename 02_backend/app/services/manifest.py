@@ -1,10 +1,14 @@
 from typing import Optional, Tuple, List, Dict, Any
 from urllib.parse import urlparse
+from base64 import b64decode
 
 from fastapi import HTTPException, status
 
 from sqlalchemy import text
 from sqlalchemy.orm import Session
+
+from Crypto.PublicKey import RSA
+from Crypto.Cipher import PKCS1_OAEP
 
 import dns.resolver
 import requests
@@ -12,6 +16,19 @@ import yaml
 import json
 import uuid as uuid_lib
 from datetime import date
+
+def get_private_key(db: Session) -> Optional[str]:
+    result = db.execute(
+        text("SELECT private_key FROM ql_cred WHERE is_active = TRUE ORDER BY created_at DESC LIMIT 1")
+    ).fetchone()
+    return result[0] if result else None
+
+
+def decrypt_auth_value(encrypted_b64: str, private_key_pem: str) -> str:
+    key = RSA.import_key(private_key_pem)
+    cipher = PKCS1_OAEP.new(key)
+    return cipher.decrypt(b64decode(encrypted_b64)).decode("utf-8")
+
 
 def pull_manifest(provider_uuid: str, metadata: Dict, db: Session) -> Dict[str, Any]:
     """
@@ -129,26 +146,38 @@ def pull_manifest(provider_uuid: str, metadata: Dict, db: Session) -> Dict[str, 
 
                 source_version_uuid = new_version_result[0]
 
-                source_records = [
-                    {
+                source_records = []
+                for item in source_uuid_json:
+                    if not (item.get("source_uuid") and item.get("path") and item.get("type")):
+                        continue
+                    source_auth = None
+                    auth = item.get("auth")
+                    if isinstance(auth, dict) and auth.get("type") == "httpheader":
+                        field = auth.get("field")
+                        encrypted_value = auth.get("value")
+                        if field and encrypted_value:
+                            try:
+                                decrypted = decrypt_auth_value(encrypted_value, get_private_key(db))
+                                source_auth = {"type": "httpheader", "field": field, "value": decrypted}
+                            except Exception:
+                                print(f"Failed to decrypt auth for source {item.get('source_uuid')}")
+                    source_records.append({
                         "source_uuid": item["source_uuid"],
                         "source_version_uuid": source_version_uuid,
                         "source_path": item.get("path"),
                         "source_type": item.get("type"),
                         "source_version": item.get("version"),
                         "source_name": item.get("name", ""),
-                    }
-                    for item in source_uuid_json
-                    if item.get("source_uuid") and item.get("path") and item.get("type")
-                ]
+                        "source_auth": json.dumps(source_auth) if source_auth else None,
+                    })
 
                 if source_records:
                     db.execute(
                         text("""
                             INSERT INTO source
-                            (source_uuid, source_version_uuid, source_path, source_type, source_version, source_name)
+                            (source_uuid, source_version_uuid, source_path, source_type, source_version, source_name, source_auth)
                             VALUES
-                            (:source_uuid, :source_version_uuid, :source_path, :source_type, :source_version, :source_name)
+                            (:source_uuid, :source_version_uuid, :source_path, :source_type, :source_version, :source_name, CAST(:source_auth AS jsonb))
                         """),
                         source_records,
                     )

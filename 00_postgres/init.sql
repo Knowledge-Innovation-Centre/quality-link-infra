@@ -41,6 +41,7 @@ CREATE TABLE IF NOT EXISTS source (
     source_path VARCHAR,
     source_type VARCHAR,
     source_version VARCHAR,
+    source_auth JSONB,
     last_date_pull DATE,
     last_file_pushed VARCHAR,
     last_file_pushed_date TIMESTAMP WITH TIME ZONE,
