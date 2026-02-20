@@ -150,34 +150,37 @@ def pull_manifest(provider_uuid: str, metadata: Dict, db: Session) -> Dict[str, 
                 for item in source_uuid_json:
                     if not (item.get("source_uuid") and item.get("path") and item.get("type")):
                         continue
-                    source_auth = None
-                    auth = item.get("auth")
-                    if isinstance(auth, dict) and auth.get("type") == "httpheader":
-                        field = auth.get("field")
-                        encrypted_value = auth.get("value")
-                        if field and encrypted_value:
+                    source_auth = item.pop("auth", None)
+                    if isinstance(source_auth, dict) and source_auth.get("type") == "httpheader":
+                        encrypted_value = source_auth.get("value")
+                        if encrypted_value:
                             try:
                                 decrypted = decrypt_auth_value(encrypted_value, get_private_key(db))
-                                source_auth = {"type": "httpheader", "field": field, "value": decrypted}
+                                source_auth["value"] = decrypted
                             except Exception:
                                 print(f"Failed to decrypt auth for source {item.get('source_uuid')}")
                     source_records.append({
-                        "source_uuid": item["source_uuid"],
+                        "source_uuid": item.pop("source_uuid"),
                         "source_version_uuid": source_version_uuid,
-                        "source_path": item.get("path"),
-                        "source_type": item.get("type"),
-                        "source_version": item.get("version"),
-                        "source_name": item.get("name", ""),
+                        "source_id": item.pop("id", None),
+                        "source_path": item.pop("path"),
+                        "source_type": item.pop("type"),
+                        "source_version": item.pop("version", None),
+                        "source_name": item.pop("name", ""),
+                        "source_refresh": int(item.pop("refresh", 0)),
                         "source_auth": json.dumps(source_auth) if source_auth else None,
+                        "source_headers": json.dumps(item.pop("headers")) if "headers" in item else None,
+                        "source_parameters": json.dumps(item.pop("queryParameters")) if "queryParameters" in item else None,
+                        "source_other": json.dumps(item) if item else None,
                     })
 
                 if source_records:
                     db.execute(
                         text("""
                             INSERT INTO source
-                            (source_uuid, source_version_uuid, source_path, source_type, source_version, source_name, source_auth)
+                            (source_uuid, source_version_uuid, source_id, source_path, source_type, source_version, source_name, source_refresh, source_auth, source_headers, source_parameters, source_other)
                             VALUES
-                            (:source_uuid, :source_version_uuid, :source_path, :source_type, :source_version, :source_name, CAST(:source_auth AS jsonb))
+                            (:source_uuid, :source_version_uuid, :source_id, :source_path, :source_type, :source_version, :source_name, :source_refresh, CAST(:source_auth AS jsonb), CAST(:source_headers AS jsonb), CAST(:source_parameters AS jsonb), CAST(:source_other AS jsonb) )
                         """),
                         source_records,
                     )

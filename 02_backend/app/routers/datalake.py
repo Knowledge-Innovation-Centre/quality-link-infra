@@ -360,7 +360,6 @@ async def queue_provider_data(
             "provider_uuid": str(provider_uuid),
             "source_version_uuid": str(source_version_uuid),
             "source_uuid": str(source_uuid),
-            "source_path": source_path,
             "queued_at": datetime.utcnow().isoformat(),
             "status": "queued",
         }
@@ -375,7 +374,6 @@ async def queue_provider_data(
                     "provider_uuid": provider_data["provider_uuid"],
                     "source_version_uuid": provider_data["source_version_uuid"],
                     "source_uuid": provider_data["source_uuid"],
-                    "source_path": provider_data["source_path"],
                     "queued_at": provider_data["queued_at"],
                 },
             }
