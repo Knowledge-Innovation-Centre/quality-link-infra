@@ -142,28 +142,8 @@ VITE_API_URL=<backend external URL>
 VITE_RECAPTCHA_SITE_KEY=<API key for Recaptcha>
 ```
 ### Expose Ports
-This repository is designed for deployment using [Coolify](https://coolify.io/). Hence no ports are exposed in the Docker Compose config by default. To expose ports for local development or testing, create a `docker-compose.override.yml` file using the following example:
-```yaml
-services:
-  frontend:
-    ports:
-      - "3000:3000"
-  postgres:
-    ports:
-      - "5432:5432"
-  minio:
-    ports:
-      - "9001:9001"
-  mageai:
-    ports:
-      - "6789:6789"
-  backend:
-    ports:
-      - "8000:8000"
-  fuseki:
-    ports:
-      - "3030:3030"
-```
+This repository is designed for deployment using [Coolify](https://coolify.io/). Hence no ports are exposed in the Docker Compose config by default. To expose ports for local development or testing, see `docker-compose.override.yml` example under Development below.
+
 ### Database Schema
 The PostgreSQL database includes the following tables:
 - `provider` - Higher education institution records
@@ -269,8 +249,63 @@ The `04_notebook/guide.ipynb` demonstrates the RDF to Meilisearch pipeline:
                                             │ Version Record   │
                                             └──────────────────┘
 ```
+
 ## Development
-### Local Development
+
+### Local Docker
+For local development or testing, create a `docker-compose.override.yml` file using the following example to expose relevant ports and mount your local working directories into the relevant containers:
+```yaml
+services:
+
+  # production setup has no Meilisearch service, as it runs separately
+  meili:
+    image: getmeili/meilisearch:v1.29
+    ports:
+      - "7700:7700"
+    volumes:
+      - meili_data:/meili_data
+    environment:
+      MEILI_MASTER_KEY: ${MEILISEARCH_API_KEY}
+
+  frontend:
+    ports:
+      - "3000:3000"
+
+  postgres:
+    ports:
+      - "5432:5432"
+
+  minio:
+    ports:
+      - "9001:9001"
+
+  mageai:
+    ports:
+      - "6789:6789"
+    volumes:
+      - $HOME/Git/quality-link-workflows:/home/src/ql
+    environment:
+      GIT_SYNC_ON_START: 0
+      GIT_USERNAME: your_git_username
+      GIT_EMAIL: "you@example.org"
+      GIT_ACCESS_TOKEN: ${GITHUB_TOKEN}
+
+  backend:
+    volumes:
+      - ./02_backend/app:/app:ro
+    command: ["uvicorn", "main:app", "--reload", "--host", "0.0.0.0", "--port", "8000"]
+    ports:
+      - "8000:8000"
+
+  fuseki:
+    ports:
+      - "3030:3030"
+
+volumes:
+  meili_data:
+```
+
+### Local (no containers)
 For backend development:
 ```bash
 cd 02_backend

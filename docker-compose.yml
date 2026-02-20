@@ -66,6 +66,7 @@ services:
     environment:
       USER_CODE_PATH: /home/src/ql
       GIT_REPO_LINK: ${MAGE_WORKFLOW_REPO:-https://github.com/Knowledge-Innovation-Centre/quality-link-workflows.git}
+      GIT_BRANCH: ${MAGE_WORKFLOW_BRANCH:-main}
       GIT_REPO_PATH: /home/src/ql
       GIT_AUTH_TYPE: https
       GIT_SYNC_ON_START: 1
@@ -94,7 +95,7 @@ services:
       MEILISEARCH_INDEX: ${MEILISEARCH_INDEX:-ql_courses}
       MEILISEARCH_API_KEY: ${MEILISEARCH_API_KEY}
     volumes:
-      - mageai_projects:/home/src
+      - mageai_data:/home/src/mage_data
     depends_on:
       - postgres
       - dragonfly
@@ -145,4 +146,5 @@ volumes:
   postgres_data:
   dragonfly_data:
   minio_data:
-  mageai_projects:
+  mageai_data:
+
