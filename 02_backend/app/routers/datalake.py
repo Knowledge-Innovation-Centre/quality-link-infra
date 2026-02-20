@@ -75,23 +75,23 @@ async def list_datalake_files_v2(
                 else:
                     raise HTTPException(
                         status_code=status.HTTP_404_NOT_FOUND,
-                        detail="No latest date found in manifest file",
+                        detail="No latest date found in datalake manifest file",
                     )
             except S3Error as e:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
-                    detail=f"Failed to retrieve manifest file: {str(e)}",
+                    detail=f"Failed to retrieve datalake manifest file: {str(e)}",
                 )
             except json.JSONDecodeError as e:
                 raise HTTPException(
                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail=f"Failed to parse manifest file: {str(e)}",
+                    detail=f"Failed to parse datalake manifest file: {str(e)}",
                 )
 
         if not date_folder:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="No date could be determined. Please provide a date or ensure manifest contains a latest_date.",
+                detail="No date could be determined.",
             )
 
         prefix = f"datalake/courses/{provider_uuid}/{source_version_uuid}/{source_uuid}/{date_folder}/"
@@ -209,15 +209,15 @@ async def list_datalake_dates(
 
         except S3Error as e:
             if e.code == "NoSuchKey":
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Manifest file not found")
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No data pulled for this source yet.")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Failed to retrieve manifest file: {str(e)}",
+                detail=f"Failed to retrieve list of datalake files: {str(e)}",
             )
         except json.JSONDecodeError as e:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Failed to parse manifest file: {str(e)}",
+                detail=f"Failed to parse datalake manifest file: {str(e)}",
             )
 
     except HTTPException:
@@ -318,7 +318,7 @@ async def queue_provider_data(
         if not requested_version:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Source version not found for the specified provider",
+                detail="Manifest file version not found for the specified provider",
             )
 
         latest_version = db.execute(
@@ -335,7 +335,7 @@ async def queue_provider_data(
         if not latest_version:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="No source versions found for this provider",
+                detail="No manifest file versions found for this provider",
             )
 
         if str(latest_version[0]) != str(source_version_uuid):
@@ -343,7 +343,7 @@ async def queue_provider_data(
                 status_code=410,
                 content={
                     "status": "outdated",
-                    "message": "You are using an outdated version for this provider. Please refresh your page to retrieve the latest configurations.",
+                    "message": "You are using an outdated manifest file version for this provider. Please refresh your page to retrieve the latest configurations.",
                     "provider_uuid": str(provider_uuid),
                     "requested_version": {
                         "version_date": requested_version[0].isoformat(),
