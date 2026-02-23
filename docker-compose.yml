@@ -5,143 +5,135 @@ services:
   frontend:
     build:
       context: ./03_frontend
-      dockerfile: Dockerfile.frontend
-    container_name: ${FRONTEND_CONTAINER_NAME}
-    ports:
-      - "${FRONTEND_PORT}:3000"
+      args:
+        VITE_RECAPTCHA_SITE_KEY: ${VITE_RECAPTCHA_SITE_KEY}
+        VITE_API_URL: ${VITE_API_URL}
+        VITE_RECAPTCHA_ENABLED: ${VITE_RECAPTCHA_ENABLED:-true}
     restart: unless-stopped
-  postgres:
-    image: ${POSTGRES_IMAGE}
-    container_name: ${POSTGRES_CONTAINER_NAME}
     environment:
-      POSTGRES_USER: ${POSTGRES_USER}
+      VITE_API_URL: ${VITE_API_URL}
+      VITE_RECAPTCHA_SITE_KEY: ${VITE_RECAPTCHA_SITE_KEY}
+      VITE_RECAPTCHA_ENABLED: ${VITE_RECAPTCHA_ENABLED:-true}
+    depends_on:
+      - backend
+
+  postgres:
+    build: ./00_postgres
+    environment:
+      POSTGRES_USER: quality_link
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB}
-    ports:
-      - "${POSTGRES_PORT}:5432"
+      POSTGRES_DB: backend
     volumes:
-      - postgres_data:/var/lib/postgresql/data
-      - ./00_postgres:/docker-entrypoint-initdb.d
+      - postgres_data:/var/lib/postgresql
     restart: unless-stopped
     command: postgres -c max_connections=100 -c shared_buffers=512MB
 
-
   dragonfly:
-    image: ${DRAGONFLY_IMAGE}
-    container_name: ${DRAGONFLY_CONTAINER_NAME}
+    image: docker.dragonflydb.io/dragonflydb/dragonfly
     command: >
-      --bind=${DRAGONFLY_BIND}
+      --bind=0.0.0.0
       --requirepass=${DRAGONFLY_PASSWORD}
       --maxmemory=0
-      --dir=${DRAGONFLY_DATA_DIR}
-      --dbfilename=${DRAGONFLY_DBNAME}
-      --keys_output_limit=${DRAGONFLY_KEYS_OUTPUT_LIMIT}
-      --dbnum=${DRAGONFLY_DBNUM}
-      --cache_mode=${DRAGONFLY_CACHE_MODE}
-      --hz=${DRAGONFLY_HZ}
-      --snapshot_cron="${DRAGONFLY_SNAPSHOT_CRON}"
+      --dir=/data
+      --dbfilename=${DRAGONFLY_DBNAME:-dump}
+      --keys_output_limit=${DRAGONFLY_KEYS_OUTPUT_LIMIT:-8192}
+      --dbnum=${DRAGONFLY_DBNUM:-6}
+      --cache_mode=${DRAGONFLY_CACHE_MODE:-true}
+      --hz=${DRAGONFLY_HZ:-100}
+      --snapshot_cron="${DRAGONFLY_SNAPSHOT_CRON:-* * * * *}"
       --primary_port_http_enabled=false
-    ports:
-      - "${DRAGONFLY_PORT}:6379"
     volumes:
       - dragonfly_data:/data
-    depends_on:
-      - frontend
     restart: unless-stopped
 
-
   minio:
-    image: ${MINIO_IMAGE}
-    container_name: ${MINIO_CONTAINER_NAME}
+    image: quay.io/minio/minio:RELEASE.2025-06-13T11-33-47Z
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
-    command: minio server ${MINIO_DATA_DIR} --console-address "0.0.0.0:9001"
+    command: minio server /data --console-address "0.0.0.0:9001"
     volumes:
       - minio_data:/data
-    ports:
-      - "${MINIO_API_PORT}:9000"
-      - "${MINIO_CONSOLE_PORT}:9001"
-    depends_on:
-      - frontend
     restart: unless-stopped
-
 
   mageai:
     build:
       context: ./01_mage
-      dockerfile: Dockerfile
       args:
-        BASE_CODE_PATH: ${MAGEAI_BASE_PATH}
-        PROJECT_NAME: ${MAGEAI_PROJECT_NAME}
-    container_name: ${MAGEAI_CONTAINER_NAME}
-    command: mage start ${MAGEAI_PROJECT_NAME}
+        BASE_CODE_PATH: /home/src
+        PROJECT_NAME: ql
+    command: mage start ql
     environment:
-      USER_CODE_PATH: ${MAGEAI_BASE_PATH}/${MAGEAI_PROJECT_NAME}
-      MAGE_DATABASE_CONNECTION_URL: ${MAGE_DATABASE_CONNECTION_URL}
-      REDIS_URL: ${MAGEAI_REDIS_URL}
-      REQUIRE_USER_AUTHENTICATION: ${MAGEAI_REQUIRE_AUTH}
+      USER_CODE_PATH: /home/src/ql
+      GIT_REPO_LINK: ${MAGE_WORKFLOW_REPO:-https://github.com/Knowledge-Innovation-Centre/quality-link-workflows.git}
+      GIT_BRANCH: ${MAGE_WORKFLOW_BRANCH:-main}
+      GIT_REPO_PATH: /home/src/ql
+      GIT_AUTH_TYPE: https
+      GIT_SYNC_ON_START: 1
+      MAGE_DATABASE_CONNECTION_URL: postgresql://quality_link:${POSTGRES_PASSWORD}@postgres:5432/mage
+      REDIS_URL: redis://:${DRAGONFLY_PASSWORD}@dragonfly:6379/0
+      REQUIRE_USER_AUTHENTICATION: 1
       DEFAULT_OWNER_EMAIL: ${DEFAULT_OWNER_EMAIL}
       DEFAULT_OWNER_USERNAME: ${DEFAULT_OWNER_USERNAME}
       DEFAULT_OWNER_PASSWORD: ${DEFAULT_OWNER_PASSWORD}
-    ports:
-      - "${MAGEAI_PORT}:6789"
+      MINIO_HOST: minio:9000
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      MINIO_BUCKET_NAME: ${BUCKET_NAME:-quality-link-storage}
+      DRAGONFLY_HOST: dragonfly
+      DRAGONFLY_PASSWORD: ${DRAGONFLY_PASSWORD}
+      POSTGRES_USER: quality_link
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB_NAME: backend
+      FUSEKI_USERNAME: admin
+      FUSEKI_PASSWORD: ${FUSEKI_ADMIN_PASSWORD}
+      FUSEKI_URL: http://fuseki:3030
+      FUSEKI_DATASET_NAME: ${FUSEKI_DATASET_NAME:-qualitylink}
+      MEILISEARCH_URL: ${MEILISEARCH_URL}
+      MEILISEARCH_INDEX: ${MEILISEARCH_INDEX:-ql_courses}
+      MEILISEARCH_API_KEY: ${MEILISEARCH_API_KEY}
     volumes:
-      - mageai_projects:/home/src
-      - mageai_data:/home/src/ql/mage_data
+      - mageai_data:/home/src/mage_data
     depends_on:
       - postgres
       - dragonfly
       - minio
-      - frontend
-      - backend
       - fuseki
     restart: unless-stopped
-
 
   backend:
     build:
       context: ./02_backend
-      dockerfile: Dockerfile.backend
-    container_name: ${BACKEND_CONTAINER_NAME}
     environment:
-      DB_USER: ${POSTGRES_USER}
+      DB_USER: quality_link
       DB_PASSWORD: ${POSTGRES_PASSWORD}
       DB_HOST: postgres
       DB_PORT: 5432
-      DB_NAME: ${DB_NAME}
-      BACKEND_REDIS_URL: ${BACKEND_REDIS_URL}
-      MINIO_HOST: ${MINIO_HOST}
+      DB_NAME: backend
+      BACKEND_REDIS_URL: redis://:${DRAGONFLY_PASSWORD}@dragonfly:6379/1
+      MINIO_HOST: minio:9000
       MINIO_KEY: ${MINIO_ROOT_USER}
       MINIO_SECRET: ${MINIO_ROOT_PASSWORD}
-      BUCKET_NAME: ${BUCKET_NAME}
-    ports:
-      - "${BACKEND_PORT}:8000"
+      BUCKET_NAME: ${BUCKET_NAME:-quality-link-storage}
     depends_on:
       - postgres
       - dragonfly
       - minio
-      - frontend
-      - fuseki
     restart: unless-stopped
 
-
   fuseki:
-    image: ${FUSEKI_IMAGE}
-    container_name: ${FUSEKI_CONTAINER_NAME}
+    image: stain/jena-fuseki:5.1.0
     environment:
       ADMIN_PASSWORD: ${FUSEKI_ADMIN_PASSWORD}
-      JVM_ARGS: ${FUSEKI_JVM_ARGS}
-      ENABLE_UPDATE: ${FUSEKI_ENABLE_UPDATE}
-      ENABLE_DATA_WRITE: ${FUSEKI_ENABLE_DATA_WRITE}
-      FUSEKI_DATASET_1: ${FUSEKI_DATASET_NAME}
-      FUSEKI_DATASET_1_TDB2: ${FUSEKI_TDB2_ENABLED}
+      JVM_ARGS: ${FUSEKI_JVM_ARGS:--Xmx2g -XX:+UseContainerSupport}
+      ENABLE_UPDATE: ${FUSEKI_ENABLE_UPDATE:-true}
+      ENABLE_DATA_WRITE: ${FUSEKI_ENABLE_DATA_WRITE:-true}
+      TDB: ${FUSEKI_TDB:-2}
+      FUSEKI_DATASET_1: ${FUSEKI_DATASET_NAME:-qualitylink}
     volumes:
-      - fuseki-data:/fuseki/databases
-      - fuseki-config:/fuseki/configuration
-      - fuseki-backups:/fuseki/backups
-    ports:
-      - "${FUSEKI_PORT}:3030"
+      - fuseki_data:/fuseki
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3030/$/ping"]
@@ -149,13 +141,10 @@ services:
       timeout: 10s
       retries: 3
 
-
 volumes:
-  fuseki-data:
-  fuseki-config:
-  fuseki-backups:
+  fuseki_data:
   postgres_data:
   dragonfly_data:
   minio_data:
-  mageai_projects:
   mageai_data:
+
