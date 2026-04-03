@@ -1,5 +1,4 @@
 import { apiClient } from './client';
-import { API_CONFIG } from './config';
 import type {
   GetAllProvidersParams,
   GetAllProvidersResponse,
@@ -18,7 +17,7 @@ import type {
  * Handles all provider-related API calls
  */
 export class ProvidersApi {
-  private basePath = API_CONFIG.ENDPOINTS.QUALITY_LINK;
+  private basePath = '';
 
   /**
    * Get all providers with optional search and pagination

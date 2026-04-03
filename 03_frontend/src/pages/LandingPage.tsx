@@ -1,4 +1,4 @@
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import InstitutionSelector from "@/components/features/InstitutionSelector";
 import qlIcon from "@/assets/images/ql-icon.png";
 
@@ -37,6 +37,20 @@ export default function LandingPage() {
                 </a>
                 .
               </p>
+              <div className="flex gap-3">
+                <Link
+                  to="/manifest-builder"
+                  className="inline-flex items-center gap-2 px-5 py-2.5 bg-white/10 hover:bg-white/20 text-white font-medium rounded-lg transition-colors text-sm"
+                >
+                  Manifest Builder
+                </Link>
+                <Link
+                  to="/help"
+                  className="inline-flex items-center gap-2 px-5 py-2.5 bg-white/10 hover:bg-white/20 text-white font-medium rounded-lg transition-colors text-sm"
+                >
+                  Help
+                </Link>
+              </div>
             </div>
           </div>
         </div>
