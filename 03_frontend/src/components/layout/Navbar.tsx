@@ -1,10 +1,18 @@
-import { Link } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 
 interface NavbarProps {
   showActions?: boolean
 }
 
 export default function Navbar({ showActions = false }: NavbarProps) {
+  const location = useLocation()
+
+  const navItems = [
+    { to: '/', label: 'Dashboard', match: (path: string) => path === '/' || path.startsWith('/dashboard') },
+    { to: '/manifest-builder', label: 'Manifest Builder', match: (path: string) => path === '/manifest-builder' },
+    { to: '/help', label: 'Help', match: (path: string) => path === '/help' },
+  ]
+
   return (
     <nav className="bg-primary text-white shadow-md">
       <div className="max-w-10xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -17,11 +25,21 @@ export default function Navbar({ showActions = false }: NavbarProps) {
             </div>
             <div className="h-8 w-px bg-white/30" />
             <div className="flex items-center gap-2">
-              <div className="bg-white/10 px-3 py-2 rounded-lg hover:bg-white/20 transition-colors">
-                <Link to="/" className="text-white text-sm font-medium">
-                  Dashboard
-                </Link>
-              </div>
+              {navItems.map((item) => {
+                const isActive = item.match(location.pathname)
+                return (
+                  <div
+                    key={item.to}
+                    className={`px-3 py-2 rounded-lg transition-colors ${
+                      isActive ? 'bg-white/25' : 'bg-white/10 hover:bg-white/20'
+                    }`}
+                  >
+                    <Link to={item.to} className="text-white text-sm font-medium">
+                      {item.label}
+                    </Link>
+                  </div>
+                )
+              })}
             </div>
           </div>
 

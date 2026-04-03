@@ -4,6 +4,7 @@ import { ThemeProvider } from './context/ThemeContext'
 import LandingPage from './pages/LandingPage'
 import DashboardPage from './pages/DashboardPage'
 import HelpPage from './pages/HelpPage'
+import ManifestBuilderPage from './pages/ManifestBuilderPage'
 
 function App() {
   return (
@@ -14,6 +15,7 @@ function App() {
             <Route path="/" element={<LandingPage />} />
             <Route path="/dashboard/:providerUuid" element={<DashboardPage />} />
             <Route path="/help" element={<HelpPage />} />
+            <Route path="/manifest-builder" element={<ManifestBuilderPage />} />
           </Routes>
         </Router>
       </ToastProvider>
