@@ -1,7 +1,9 @@
 from typing import Optional, Tuple, List, Dict, Any
 from urllib.parse import urlparse
 from base64 import b64decode
+from uuid import UUID
 
+import redis
 from fastapi import HTTPException, status
 
 from sqlalchemy import text
@@ -16,6 +18,59 @@ import yaml
 import json
 import uuid as uuid_lib
 from datetime import date
+
+
+def refresh_manifest_for_provider(
+    db: Session, redis_client: "redis.Redis", provider_uuid: UUID
+) -> Dict[str, Any]:
+    """Acquire the per-provider lock, fetch metadata, and run pull_manifest.
+
+    Returns {"status": "busy", ...} when the lock is held. Raises HTTPException
+    for missing providers or infrastructure errors. Otherwise returns the
+    pull_manifest result dict.
+    """
+    lock_key = f"pull_manifest:{provider_uuid}"
+    lock_uuid = str(uuid_lib.uuid4())
+
+    try:
+        acquired = redis_client.set(lock_key, lock_uuid, ex=60, nx=True)
+    except redis.RedisError as err:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Redis error: {err}",
+        )
+
+    if not acquired:
+        return {
+            "status": "busy",
+            "message": "This provider is currently being processed. Please try again later.",
+            "provider_uuid": str(provider_uuid),
+        }
+
+    try:
+        row = db.execute(
+            text("SELECT metadata FROM provider WHERE provider_uuid = :provider_uuid"),
+            {"provider_uuid": provider_uuid},
+        ).fetchone()
+
+        if not row:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Provider not found"
+            )
+
+        return pull_manifest(provider_uuid, row[0], db)
+
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Unexpected error: {e}",
+        )
+    finally:
+        safe_release_lock(redis_client, lock_key, lock_uuid)
 
 def get_private_key(db: Session) -> Optional[str]:
     result = db.execute(

@@ -4,7 +4,6 @@ from datetime import datetime
 from typing import Any, Dict, Optional
 from uuid import UUID
 
-import redis
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import JSONResponse, StreamingResponse
 from minio.error import S3Error
@@ -14,6 +13,7 @@ from sqlalchemy.orm import Session
 from config import BUCKET_NAME
 from database import get_db
 from dependencies import get_minio_client, redis_client
+from services.datalake import queue_provider_data as queue_provider_data_service
 
 router = APIRouter(tags=["Datalake"])
 
@@ -292,101 +292,11 @@ async def queue_provider_data(
     source_path: str = Query(..., title="Source Path"),
     db: Session = Depends(get_db),
 ) -> Dict[str, Any]:
-    lock_key = f"pull_manifest:{provider_uuid}"
-
-    try:
-        if redis_client.exists(lock_key):
-            return JSONResponse(
-                status_code=423,
-                content={
-                    "status": "busy",
-                    "message": "Manifest is currently being pulled for this provider. Please try again later.",
-                    "provider_uuid": str(provider_uuid),
-                },
-            )
-
-        requested_version = db.execute(
-            text("""
-                SELECT version_date, version_id
-                FROM source_version
-                WHERE provider_uuid = :provider_uuid
-                AND source_version_uuid = :source_version_uuid
-            """),
-            {"provider_uuid": provider_uuid, "source_version_uuid": source_version_uuid},
-        ).fetchone()
-
-        if not requested_version:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Manifest file version not found for the specified provider",
-            )
-
-        latest_version = db.execute(
-            text("""
-                SELECT source_version_uuid, version_date, version_id
-                FROM source_version
-                WHERE provider_uuid = :provider_uuid
-                ORDER BY version_date DESC, version_id DESC
-                LIMIT 1
-            """),
-            {"provider_uuid": provider_uuid},
-        ).fetchone()
-
-        if not latest_version:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="No manifest file versions found for this provider",
-            )
-
-        if str(latest_version[0]) != str(source_version_uuid):
-            return JSONResponse(
-                status_code=410,
-                content={
-                    "status": "outdated",
-                    "message": "You are using an outdated manifest file version for this provider. Please refresh your page to retrieve the latest configurations.",
-                    "provider_uuid": str(provider_uuid),
-                    "requested_version": {
-                        "version_date": requested_version[0].isoformat(),
-                        "version_id": requested_version[1],
-                    },
-                    "latest_version": {
-                        "version_date": latest_version[1].isoformat(),
-                        "version_id": latest_version[2],
-                    },
-                },
-            )
-
-        provider_data = {
-            "provider_uuid": str(provider_uuid),
-            "source_version_uuid": str(source_version_uuid),
-            "source_uuid": str(source_uuid),
-            "queued_at": datetime.utcnow().isoformat(),
-            "status": "queued",
-        }
-
-        try:
-            redis_client.rpush("provider_data_queue", json.dumps(provider_data))
-            return {
-                "status": "success",
-                "message": "Provider data has been queued for processing",
-                "queue": "provider_data_queue",
-                "data": {
-                    "provider_uuid": provider_data["provider_uuid"],
-                    "source_version_uuid": provider_data["source_version_uuid"],
-                    "source_uuid": provider_data["source_uuid"],
-                    "queued_at": provider_data["queued_at"],
-                },
-            }
-        except redis.RedisError as redis_err:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Redis error: {str(redis_err)}",
-            )
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to queue provider data: {str(e)}",
-        )
+    result = queue_provider_data_service(
+        db, redis_client, provider_uuid, source_version_uuid, source_uuid, source_path
+    )
+    if result.get("status") == "busy":
+        return JSONResponse(status_code=423, content=result)
+    if result.get("status") == "outdated":
+        return JSONResponse(status_code=410, content=result)
+    return result
