@@ -47,6 +47,29 @@ def _resolve(db, value: str) -> UUID:
         _die(str(e.detail))
 
 
+def _render_manifest_probes(probes: Optional[list]) -> Table:
+    table = Table(title="Probes tried")
+    table.add_column("Domain")
+    table.add_column("Type")
+    table.add_column("Result")
+    table.add_column("Path")
+    for probe in probes or []:
+        check = probe.get("check")
+        if check is True:
+            cell = "[green]hit[/green]"
+        elif check is False:
+            cell = "[red]miss[/red]"
+        else:
+            cell = "[dim]skipped[/dim]"
+        table.add_row(
+            probe.get("domain") or "-",
+            probe.get("type") or "-",
+            cell,
+            probe.get("path") or "-",
+        )
+    return table
+
+
 @providers_app.command("list")
 def providers_list(
     search: str = typer.Argument(
@@ -128,26 +151,7 @@ def providers_refresh_manifest(
         f"New source version created: {result.get('new_source_version_created')}"
     )
 
-    table = Table(title="Probes tried")
-    table.add_column("Domain")
-    table.add_column("Type")
-    table.add_column("Result")
-    table.add_column("Path")
-    for probe in result.get("manifest_json") or []:
-        check = probe.get("check")
-        if check is True:
-            cell = "[green]hit[/green]"
-        elif check is False:
-            cell = "[red]miss[/red]"
-        else:
-            cell = "[dim]skipped[/dim]"
-        table.add_row(
-            probe.get("domain") or "-",
-            probe.get("type") or "-",
-            cell,
-            probe.get("path") or "-",
-        )
-    console.print(table)
+    console.print(_render_manifest_probes(result.get("manifest_json")))
 
 
 @providers_app.command("sources")
@@ -155,7 +159,8 @@ def providers_list_sources(
     provider: str = typer.Argument(..., help="Provider UUID, ETER id, or DEQAR id"),
 ) -> None:
     """
-    List data sources of a provider's latest manifest version.
+    List data sources of a provider's latest manifest version, plus the
+    manifest probes recorded during the last discovery run.
     """
 
     with SessionLocal() as db:
@@ -164,6 +169,27 @@ def providers_list_sources(
             result = get_provider(db, provider_uuid)
         except HTTPException as e:
             _die(str(e.detail))
+
+    provider_row = result.get("provider") or {}
+    pulled = provider_row.get("last_manifest_pull")
+    probes = provider_row.get("manifest_json")
+
+    if probes:
+        console.print(
+            f"Last manifest pull: [cyan]{pulled[:16].replace('T', ' ') if pulled else '-'}[/cyan]"
+        )
+        hit = next((p for p in probes if p.get("check") is True), None)
+        if hit:
+            console.print(
+                f"Manifest found: [green]yes[/green] — {hit.get('path') or '-'}"
+            )
+        else:
+            console.print("Manifest found: [red]no[/red]")
+        console.print(_render_manifest_probes(probes))
+    else:
+        console.print(
+            "[yellow]No manifest discovery has been run for this provider yet.[/yellow]"
+        )
 
     version = result.get("source_version")
     sources = result.get("sources") or []
