@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import List, Optional, Annotated
 from uuid import UUID
 
 import typer
@@ -6,19 +6,32 @@ from fastapi import HTTPException
 from rich.console import Console
 from rich.table import Table
 
+from config import DEFAULT_VOCABULARIES, DEQAR_API_URL
 from database import SessionLocal
 from dependencies import redis_client
+from services.course_fetch import run_course_fetch
 from services.datalake import queue_provider_data
+from services.deqar import (
+    fetch_deqar_providers,
+    providers_to_rdf,
+    push_providers_to_fuseki,
+    upsert_providers,
+)
 from services.manifest import refresh_manifest_for_provider
 from services.providers import (
     get_provider,
     list_providers,
     resolve_provider_uuid,
 )
+from services.vocabulary import refresh_vocabulary
 
-app = typer.Typer(help="QL-Pipeline admin CLI", no_args_is_help=True)
-providers_app = typer.Typer(help="Provider operations", no_args_is_help=True)
-app.add_typer(providers_app, name="providers")
+app = typer.Typer(help="QualityLink pipeline admin CLI", no_args_is_help=True)
+
+providers_app = typer.Typer(help="Provider and data source operations", no_args_is_help=True)
+app.add_typer(providers_app, name="provider")
+
+vocabularies_app = typer.Typer(help="EU controlled vocabulary operations", no_args_is_help=True)
+app.add_typer(vocabularies_app, name="vocabulary")
 
 console = Console()
 
@@ -37,18 +50,22 @@ def _resolve(db, value: str) -> UUID:
 
 @providers_app.command("list")
 def providers_list(
-    search: Optional[str] = typer.Option(
-        None, "--search", "-s", help="Filter by name, ETER id, or DEQAR id"
+    search: str = typer.Argument(
+        default=None,
+        help="Filter by name, ETER id, or DEQAR id"
     ),
     with_data: bool = typer.Option(
         False,
-        "--with-data",
+        "--with-data", "-d",
         help="Only providers for which a manifest and data sources were found",
     ),
     page: int = typer.Option(1, "--page", "-p", min=1),
     page_size: int = typer.Option(20, "--page-size", min=1, max=200),
 ) -> None:
-    """List or search providers."""
+    """
+    List or search providers.
+    """
+
     with SessionLocal() as db:
         result = list_providers(
             db, search=search, with_data=with_data, page=page, page_size=page_size
@@ -60,8 +77,8 @@ def providers_list(
         title=f"Providers — {total} match{'es' if total != 1 else ''} (page {page}/{total_pages})"
     )
     table.add_column("UUID", no_wrap=True)
-    table.add_column("ETER")
-    table.add_column("DEQAR")
+    table.add_column("ETER ID")
+    table.add_column("DEQAR ID")
     table.add_column("Name")
     table.add_column("Last manifest pull")
     table.add_column("Sources")
@@ -79,11 +96,14 @@ def providers_list(
     console.print(table)
 
 
-@providers_app.command("refresh-manifest")
+@providers_app.command("manifest")
 def providers_refresh_manifest(
     provider: str = typer.Argument(..., help="Provider UUID, ETER id, or DEQAR id"),
 ) -> None:
-    """Re-run manifest discovery for a provider (DNS TXT + .well-known)."""
+    """
+    Run manifest discovery for a provider (DNS TXT + .well-known).
+    """
+
     with SessionLocal() as db:
         provider_uuid = _resolve(db, provider)
 
@@ -131,11 +151,14 @@ def providers_refresh_manifest(
     console.print(table)
 
 
-@providers_app.command("list-sources")
+@providers_app.command("sources")
 def providers_list_sources(
     provider: str = typer.Argument(..., help="Provider UUID, ETER id, or DEQAR id"),
 ) -> None:
-    """List data sources of a provider's latest manifest version."""
+    """
+    List data sources of a provider's latest manifest version.
+    """
+
     with SessionLocal() as db:
         provider_uuid = _resolve(db, provider)
         try:
@@ -183,11 +206,11 @@ def providers_fetch(
     provider: str = typer.Argument(..., help="Provider UUID, ETER id, or DEQAR id"),
     source_uuid: Optional[UUID] = typer.Option(
         None,
-        "--source-uuid",
-        help="Queue a single source; default queues every source of the latest version",
+        "--source", "-s",
+        help="Fetch a single source; default fetches every source of the latest version",
     ),
 ) -> None:
-    """Trigger a data source fetch by queueing the provider's sources."""
+    """Fetch provider data in-process (bronze → silver → gold)."""
     with SessionLocal() as db:
         provider_uuid = _resolve(db, provider)
         try:
@@ -210,10 +233,11 @@ def providers_fetch(
         if not sources:
             _die("No sources attached to the latest version")
 
-        queued = 0
+        validated = []
         for s in sources:
             try:
-                queue_result = queue_provider_data(
+                # Validate only — do not schedule a BackgroundTask from the CLI.
+                check = queue_provider_data(
                     db,
                     redis_client,
                     provider_uuid,
@@ -227,19 +251,99 @@ def providers_fetch(
                 )
                 continue
 
-            status_ = queue_result.get("status")
             label = s.get("source_name") or s["source_uuid"]
+            status_ = check.get("status")
             if status_ == "success":
-                queued += 1
-                console.print(f"[green]queued[/green] {label} ({s['source_uuid']})")
+                validated.append((s, label))
             elif status_ == "busy":
-                console.print(f"[yellow]busy[/yellow] {label}: {queue_result.get('message')}")
+                console.print(f"[yellow]busy[/yellow] {label}: {check.get('message')}")
             elif status_ == "outdated":
-                console.print(f"[yellow]outdated[/yellow] {label}: {queue_result.get('message')}")
+                console.print(f"[yellow]outdated[/yellow] {label}: {check.get('message')}")
             else:
-                console.print(f"[red]{label}: {queue_result}[/red]")
+                console.print(f"[red]{label}: {check}[/red]")
 
-    console.print(f"\nQueued {queued}/{len(sources)} source(s).")
+    fetched = 0
+    for s, label in validated:
+        console.print(f"[cyan]fetching[/cyan] {label} ({s['source_uuid']})...")
+        run_course_fetch(
+            provider_uuid, version_uuid, UUID(s["source_uuid"]), s["source_path"]
+        )
+        fetched += 1
+
+    console.print(f"\nFetched {fetched}/{len(sources)} source(s).")
+
+
+@providers_app.command("refresh")
+def providers_refresh_from_deqar(
+    limit: int = typer.Option(2000, "--limit", min=1, help="Page size"),
+    offset: int = typer.Option(0, "--offset", min=0, help="Initial page offset"),
+    api_url: str = typer.Option(DEQAR_API_URL, "--api-url", help="DEQAR providers endpoint"),
+) -> None:
+    """
+    Refresh provider registry from the DEQAR API and push to the reference graph.
+    """
+
+    with console.status("Fetching DEQAR providers..."):
+        providers = fetch_deqar_providers(limit=limit, offset=offset, api_url=api_url)
+
+    if not providers:
+        console.print("[yellow]No providers returned from DEQAR[/yellow]")
+        raise typer.Exit(code=2)
+
+    with SessionLocal() as db:
+        with console.status(f"Upserting {len(providers)} providers into Postgres..."):
+            stats = upsert_providers(db, providers)
+
+    with console.status("Serializing providers to RDF..."):
+        rdf_list = providers_to_rdf(stats)
+
+    with console.status(f"Pushing {len(rdf_list)} providers to Fuseki reference graph..."):
+        push_stats = push_providers_to_fuseki(rdf_list)
+
+    table = Table(title="DEQAR refresh summary")
+    table.add_column("Metric")
+    table.add_column("Value", justify="right")
+    table.add_row("Total processed", str(stats.total))
+    table.add_row("New", str(stats.new))
+    table.add_row("Updated", str(stats.updated))
+    table.add_row("Unchanged", str(stats.unchanged))
+    table.add_row("DB errors", str(stats.errors))
+    table.add_row("Fuseki success", str(push_stats.success))
+    table.add_row("Fuseki failed", str(push_stats.failed))
+    console.print(table)
+
+
+@vocabularies_app.command("fetch")
+def vocabularies_fetch(
+    schemes: List[str] = typer.Argument(
+        default=None,
+        help="Scheme URIs to fetch; repeat for multiple. Default: fetch DEFAULT_VOCABULARIES from config.",
+    ),
+) -> None:
+    """
+    Fetch controlled vocabularies from EU Publications and push to Fuseki.
+    """
+    if not schemes:
+        schemes = DEFAULT_VOCABULARIES
+
+    table = Table(title=f"Vocabulary fetch — {len(schemes)} scheme(s)")
+    table.add_column("Scheme URI")
+    table.add_column("Concepts", justify="right")
+    table.add_column("Bytes", justify="right")
+    table.add_column("Result")
+
+    any_failed = False
+    for uri in schemes:
+        with console.status(f"Fetching {uri}..."):
+            stats = refresh_vocabulary(uri)
+        result = "[green]ok[/green]" if stats.success else f"[red]{stats.error or 'failed'}[/red]"
+        table.add_row(uri, str(stats.concepts), str(stats.bytes_uploaded), result)
+        if not stats.success:
+            any_failed = True
+
+    console.print(table)
+    if any_failed:
+        raise typer.Exit(code=2)
 
 
 if __name__ == "__main__":

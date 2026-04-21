@@ -4,13 +4,13 @@ from datetime import datetime
 from typing import Any, Dict, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from fastapi.responses import JSONResponse, StreamingResponse
 from minio.error import S3Error
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from config import BUCKET_NAME
+from config import MINIO_BUCKET_NAME
 from database import get_db
 from dependencies import get_minio_client, redis_client
 from services.datalake import queue_provider_data as queue_provider_data_service
@@ -66,7 +66,7 @@ async def list_datalake_files_v2(
         else:
             manifest_path = f"datalake/courses/{provider_uuid}/{source_version_uuid}/{source_uuid}/source_manifest.json"
             try:
-                data = minio_client.get_object(BUCKET_NAME, manifest_path)
+                data = minio_client.get_object(MINIO_BUCKET_NAME, manifest_path)
                 manifest = json.loads(data.read().decode("utf-8"))
                 if "latest_date" in manifest and manifest["latest_date"]:
                     date_folder = manifest["latest_date"]
@@ -104,7 +104,7 @@ async def list_datalake_files_v2(
         }
 
         try:
-            objects = minio_client.list_objects(BUCKET_NAME, prefix=prefix, recursive=True)
+            objects = minio_client.list_objects(MINIO_BUCKET_NAME, prefix=prefix, recursive=True)
             file_list = [
                 {
                     "full_path": obj.object_name,
@@ -178,7 +178,7 @@ async def list_datalake_dates(
         }
 
         try:
-            data = minio_client.get_object(BUCKET_NAME, manifest_path)
+            data = minio_client.get_object(MINIO_BUCKET_NAME, manifest_path)
             manifest = json.loads(data.read().decode("utf-8"))
 
             if "dates" in manifest and isinstance(manifest["dates"], list):
@@ -258,7 +258,7 @@ async def download_datalake_file(
         )
 
         try:
-            response = minio_client.get_object(BUCKET_NAME, file_path)
+            response = minio_client.get_object(MINIO_BUCKET_NAME, file_path)
             file_stream = io.BytesIO(response.read())
             disposition = "inline" if preview else "attachment"
             return StreamingResponse(
@@ -286,6 +286,7 @@ async def download_datalake_file(
 
 @router.post("/queue_provider_data", status_code=status.HTTP_202_ACCEPTED)
 async def queue_provider_data(
+    background_tasks: BackgroundTasks,
     provider_uuid: UUID = Query(..., title="Provider UUID"),
     source_version_uuid: UUID = Query(..., title="Source Version UUID"),
     source_uuid: UUID = Query(..., title="Source UUID"),
@@ -293,7 +294,8 @@ async def queue_provider_data(
     db: Session = Depends(get_db),
 ) -> Dict[str, Any]:
     result = queue_provider_data_service(
-        db, redis_client, provider_uuid, source_version_uuid, source_uuid, source_path
+        db, redis_client, provider_uuid, source_version_uuid, source_uuid, source_path,
+        background_tasks=background_tasks,
     )
     if result.get("status") == "busy":
         return JSONResponse(status_code=423, content=result)

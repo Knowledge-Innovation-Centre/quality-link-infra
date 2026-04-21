@@ -9,8 +9,8 @@ from fastapi import HTTPException, status
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from Crypto.PublicKey import RSA
-from Crypto.Cipher import PKCS1_OAEP
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import padding
 
 import dns.resolver
 import requests
@@ -80,9 +80,20 @@ def get_private_key(db: Session) -> Optional[str]:
 
 
 def decrypt_auth_value(encrypted_b64: str, private_key_pem: str) -> str:
-    key = RSA.import_key(private_key_pem)
-    cipher = PKCS1_OAEP.new(key)
-    return cipher.decrypt(b64decode(encrypted_b64)).decode("utf-8")
+    # SHA-1/MGF1-SHA-1 matches the pycryptodome PKCS1_OAEP default we previously
+    # used, so existing clients that encrypt against our published public key
+    # continue to work without re-encrypting their secrets.
+    pem = private_key_pem.encode("utf-8") if isinstance(private_key_pem, str) else private_key_pem
+    key = serialization.load_pem_private_key(pem, password=None)
+    plaintext = key.decrypt(
+        b64decode(encrypted_b64),
+        padding.OAEP(
+            mgf=padding.MGF1(algorithm=hashes.SHA1()),
+            algorithm=hashes.SHA1(),
+            label=None,
+        ),
+    )
+    return plaintext.decode("utf-8")
 
 
 def pull_manifest(provider_uuid: str, metadata: Dict, db: Session) -> Dict[str, Any]:

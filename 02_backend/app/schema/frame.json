@@ -1,0 +1,90 @@
+{
+    "@context": {
+        "@vocab": "http://data.quality-link.eu/ontology/v1#",
+        "id": "@id",
+        "type": "@type",
+        "ql": "http://data.quality-link.eu/ontology/v1#",
+        "elm": "http://data.europa.eu/snb/model/elm/",
+        "dcterms": "http://purl.org/dc/terms/",
+        "adms": "http://www.w3.org/ns/adms#",
+        "skos": "http://www.w3.org/2004/02/skos/core#",
+        "regorg": "http://www.w3.org/ns/regorg#",
+        "foaf": "http://xmlns.com/foaf/0.1/",
+        "dcterms:title": {
+            "@language": "en"
+        },
+        "dcterms:description": {
+            "@language": "en"
+        },
+        "skos:prefLabel": {
+            "@language": "en"
+        },
+        "elm:noteLiteral": {
+            "@language": "en"
+        },
+        "dcterms:modified": {
+            "@type": "http://www.w3.org/2001/XMLSchema#dateTime"
+        },
+        "ql:ingestedAt": {
+            "@type": "http://www.w3.org/2001/XMLSchema#dateTime"
+        },
+        "ql:ingestedDate": {
+            "@type": "http://www.w3.org/2001/XMLSchema#date"
+        },
+        "elm:schemeId": {
+            "@type": "@id"
+        },
+        "elm:EQFLevel": {
+            "@type": "@id"
+        },
+        "elm:ISCEDFCode": {
+            "@type": "@id"
+        },
+        "dcterms:language": {
+            "@type": "@id"
+        },
+        "adms:identifier": {
+            "@container": "@set"
+        },
+        "ql:isActive": {
+            "@type": "http://www.w3.org/2001/XMLSchema#boolean"
+        },
+        "has_instances": {
+            "@reverse": "http://data.europa.eu/snb/model/elm/learningAchievementSpecification"
+        }
+    },
+    "@type": [
+        "ql:LearningOpportunitySpecification",
+        "elm:Qualification",
+        "elm:LearningAchievementSpecification"
+    ],
+    "elm:learningOutcome": {
+        "@explicit": true,
+        "dcterms:title": {},
+        "elm:additionalNote": {},
+        "elm:relatedESCOSkill": {}
+    },
+    "elm:learningOutcomeSummary": {
+        "@explicit": true,
+        "elm:noteLiteral": {}
+    },
+    "elm:EQFLevel": {
+        "@explicit": true,
+        "skos:prefLabel": {}
+    },
+    "elm:ISCEDFCode": {
+        "@explicit": true,
+        "skos:prefLabel": {}
+    },
+    "dcterms:language": {
+        "@explicit": true,
+        "skos:prefLabel": {}
+    },
+    "dcterms:publisher": {
+        "@explicit": true,
+        "skos:prefLabel": {},
+        "regorg:legalName": {},
+        "foaf:homepage": {},
+        "elm:location": {}
+    }
+}

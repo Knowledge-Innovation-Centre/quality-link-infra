@@ -1,6 +1,3 @@
-CREATE DATABASE mage;
-
-GRANT ALL PRIVILEGES ON DATABASE mage TO quality_link;
 GRANT ALL PRIVILEGES ON DATABASE backend TO quality_link;
 
 \c backend;

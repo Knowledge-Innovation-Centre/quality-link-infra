@@ -1,15 +1,13 @@
-import json
-from datetime import datetime
-from typing import Any, Dict
+from datetime import datetime, timezone
+from typing import Any, Dict, Optional
 from uuid import UUID
 
 import redis
-from fastapi import HTTPException, status
+from fastapi import BackgroundTasks, HTTPException, status
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-
-PROVIDER_DATA_QUEUE = "provider_data_queue"
+from services.course_fetch import run_course_fetch
 
 
 def queue_provider_data(
@@ -19,13 +17,19 @@ def queue_provider_data(
     source_version_uuid: UUID,
     source_uuid: UUID,
     source_path: str,
+    *,
+    background_tasks: Optional[BackgroundTasks] = None,
 ) -> Dict[str, Any]:
-    """Queue a single source for a fetch.
+    """Validate the fetch request and schedule the course-fetch pipeline.
 
     Returns {"status": "busy", ...} if the provider's manifest is currently
     being pulled, {"status": "outdated", ...} if the caller's source_version
     is not the latest, otherwise {"status": "success", ...}. Raises
     HTTPException for missing versions and infrastructure errors.
+
+    When called with `background_tasks`, the pipeline is scheduled for async
+    execution (HTTP use). Without it, the caller is expected to run the
+    pipeline in the foreground (CLI use).
     """
     if redis_client.exists(f"pull_manifest:{provider_uuid}"):
         return {
@@ -82,31 +86,20 @@ def queue_provider_data(
             },
         }
 
-    provider_data = {
-        "provider_uuid": str(provider_uuid),
-        "source_version_uuid": str(source_version_uuid),
-        "source_uuid": str(source_uuid),
-        "source_path": source_path,
-        "queued_at": datetime.utcnow().isoformat(),
-        "status": "queued",
-    }
+    queued_at = datetime.now(timezone.utc).isoformat()
 
-    try:
-        redis_client.rpush(PROVIDER_DATA_QUEUE, json.dumps(provider_data))
-    except redis.RedisError as err:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Redis error: {err}",
+    if background_tasks is not None:
+        background_tasks.add_task(
+            run_course_fetch, provider_uuid, source_version_uuid, source_uuid, source_path
         )
 
     return {
         "status": "success",
-        "message": "Provider data has been queued for processing",
-        "queue": PROVIDER_DATA_QUEUE,
+        "message": "Provider data fetch has been dispatched",
         "data": {
-            "provider_uuid": provider_data["provider_uuid"],
-            "source_version_uuid": provider_data["source_version_uuid"],
-            "source_uuid": provider_data["source_uuid"],
-            "queued_at": provider_data["queued_at"],
+            "provider_uuid": str(provider_uuid),
+            "source_version_uuid": str(source_version_uuid),
+            "source_uuid": str(source_uuid),
+            "queued_at": queued_at,
         },
     }
