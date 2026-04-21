@@ -121,40 +121,32 @@ def pull_manifest(provider_uuid: str, metadata: Dict, db: Session) -> Dict[str, 
 
     test_combinations = prepare_test_combinations(schac_identifier, website_link)
 
-    manifest_found = False
     manifest_url = None
     manifest_data = None
 
-    for i, test in enumerate(test_combinations):
-        if test["domain"] is None or manifest_found:
-            test["check"] = None
+    sources_processed = False
+    new_source_version_created = False
+
+    for test in test_combinations:
+        if test["domain"] is None:
             continue
 
-        if test["type"] == "DNS":
-            manifest_path = get_txt_records(test["domain"])
-            if manifest_path:
-                manifest_url, manifest_data = validate_manifest_url(manifest_path)
-                if manifest_url:
-                    manifest_found = True
-                    test["check"] = True
-                    test["path"] = manifest_url
-                    for j in range(i + 1, len(test_combinations)):
-                        test_combinations[j]["check"] = None
-                else:
-                    test["check"] = False
-            else:
-                test["check"] = False
+        test["check"] = False
+        manifest_url = None
+        manifest_data = None
 
+        if test["type"] == "DNS":
+            manifest_url, manifest_data = validate_manifest_url(get_txt_records(test["domain"]))
         elif test["type"] == ".well-known":
             manifest_url, manifest_data = check_well_known(test["domain"])
-            if manifest_url and manifest_data:
-                manifest_found = True
-                test["check"] = True
-                test["path"] = manifest_url
-                for j in range(i + 1, len(test_combinations)):
-                    test_combinations[j]["check"] = None
-            else:
-                test["check"] = False
+
+        if manifest_url:
+            test["path"] = manifest_url
+            if manifest_data:
+                sources_processed, new_source_version_created = process_manifest(provider_uuid, manifest_data, db)
+                if sources_processed:
+                    test["check"] = True
+                    break
 
     db.execute(
         text("""
@@ -166,10 +158,31 @@ def pull_manifest(provider_uuid: str, metadata: Dict, db: Session) -> Dict[str, 
         {"manifest_json": json.dumps(test_combinations), "provider_uuid": str(provider_uuid)},
     )
 
+    db.commit()
+
+    return {
+        "status": "success",
+        "provider_uuid": str(provider_uuid),
+        "schac_domain": schac_identifier,
+        "website_link": website_link,
+        "manifest_url": manifest_url,
+        "manifest_found": sources_processed,
+        "manifest_json": test_combinations,
+        "sources_processed": sources_processed,
+        "new_source_version_created": new_source_version_created,
+    }
+
+
+def process_manifest(provider_uuid: str, manifest_data: Dict, db: Session) -> Tuple[bool, bool]:
+    """
+    Process manifest_data and update DB accordingly
+
+    Return: has a valid list of sources?, new version created?
+    """
     sources_processed = False
     new_source_version_created = False
 
-    if manifest_found and manifest_data and isinstance(manifest_data, dict) and "sources" in manifest_data:
+    if isinstance(manifest_data, dict) and "sources" in manifest_data:
         sources = manifest_data["sources"]
         if sources:
             sources_processed = True
@@ -258,19 +271,8 @@ def pull_manifest(provider_uuid: str, metadata: Dict, db: Session) -> Dict[str, 
 
                 new_source_version_created = True
 
-    db.commit()
+    return sources_processed, new_source_version_created
 
-    return {
-        "status": "success",
-        "provider_uuid": str(provider_uuid),
-        "schac_domain": schac_identifier,
-        "website_link": website_link,
-        "manifest_url": manifest_url,
-        "manifest_found": manifest_found,
-        "manifest_json": test_combinations,
-        "sources_processed": sources_processed,
-        "new_source_version_created": new_source_version_created,
-    }
 
 def get_txt_records(domain: str) -> Optional[str]:
     if not domain:
@@ -299,32 +301,18 @@ def check_well_known(domain: str) -> Tuple[Optional[str], Optional[dict]]:
         "/.well-known/quality-link-manifest.yaml",
     ]
 
-    for path in well_known_paths:
-        full_url = f"{base_url.rstrip('/')}{path}"
-        try:
-            response = requests.get(full_url, timeout=30)
-            if response.status_code == 200:
-                content_type = response.headers.get("content-type", "")
-                if content_type.startswith("application/json") or path.endswith(".json"):
-                    try:
-                        return full_url, response.json()
-                    except Exception:
-                        pass
-                if (
-                    content_type.startswith("application/yaml")
-                    or content_type.startswith("application/x-yaml")
-                    or path.endswith(".yaml")
-                ):
-                    try:
-                        return full_url, yaml.safe_load(response.text)
-                    except Exception:
-                        pass
-                if response.text and len(response.text.strip()) > 0:
-                    return full_url, {"raw_path": True, "content_type": content_type}
-        except Exception:
-            continue
+    invalid_url = None
 
-    return None, None
+    for path in well_known_paths:
+        manifest_url, manifest_data = validate_manifest_url(f"{base_url.rstrip('/')}{path}")
+        if manifest_data is not None:
+            # JSON or YAML data could be parsed
+            return manifest_url, manifest_data
+        elif manifest_url is not None:
+            # last URL returned 200 code but could not be parsed
+            invalid_url = manifest_url
+
+    return invalid_url, None
 
 
 def validate_manifest_url(url: str) -> Tuple[Optional[str], Optional[dict]]:
@@ -337,8 +325,8 @@ def validate_manifest_url(url: str) -> Tuple[Optional[str], Optional[dict]]:
             if content_type.startswith("application/json") or url.endswith(".json"):
                 try:
                     return url, manifest_resp.json()
-                except Exception:
-                    pass
+                except requests.exceptions.JSONDecodeError:
+                    return url, None
             if (
                 content_type.startswith("application/yaml")
                 or content_type.startswith("application/x-yaml")
@@ -347,10 +335,9 @@ def validate_manifest_url(url: str) -> Tuple[Optional[str], Optional[dict]]:
             ):
                 try:
                     return url, yaml.safe_load(manifest_resp.text)
-                except Exception:
-                    pass
-            if manifest_resp.text and len(manifest_resp.text.strip()) > 0:
-                return url, {"raw_path": True, "content_type": content_type}
+                except yaml.YAMLError:
+                    return url, None
+            return url, None
         return None, None
     except Exception:
         return None, None
