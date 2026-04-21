@@ -1,6 +1,5 @@
 import json
 import logging
-import re
 import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
@@ -12,7 +11,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from config import DEQAR_API_URL, GRAPH_REFERENCE
-from services import fuseki
+from services import fuseki, manifest
 
 logger = logging.getLogger(__name__)
 
@@ -83,37 +82,10 @@ def fetch_deqar_providers(
     return results
 
 
-def _extract_schac(provider: Dict[str, Any]) -> Optional[str]:
-    for identifier in provider.get("identifiers") or []:
-        if identifier.get("resource") == "SCHAC":
-            return identifier.get("identifier")
-    return None
-
-
-def _clean_website(url: Optional[str]) -> Optional[str]:
-    if not url:
-        return None
-    url = re.sub(r"^https?://", "", url)
-    url = re.sub(r"^www\.", "", url)
-    return url.rstrip("/")
-
-
-def _build_manifest_json(provider: Dict[str, Any]) -> List[Dict[str, Any]]:
-    out: List[Dict[str, Any]] = []
-    schac_id = _extract_schac(provider)
+def _build_manifest_json(provider: Dict[str, Any]) -> List[dict]:
+    schac_identifier = manifest.extract_schac(provider)
     website_link = provider.get("website_link")
-    clean = _clean_website(website_link)
-
-    if schac_id:
-        out.append({"domain": schac_id, "type": "DNS", "check": False, "path": None})
-        out.append({"domain": schac_id, "type": ".well-known", "check": False, "path": None})
-    if website_link:
-        out.append({"domain": website_link, "type": "DNS", "check": False, "path": None})
-        out.append({"domain": website_link, "type": ".well-known", "check": False, "path": None})
-    if clean and clean != website_link:
-        out.append({"domain": clean, "type": "DNS", "check": False, "path": None})
-        out.append({"domain": clean, "type": ".well-known", "check": False, "path": None})
-    return out
+    return manifest.prepare_test_combinations(schac_identifier, website_link)
 
 
 def _build_name_concat(provider: Dict[str, Any]) -> str:
@@ -170,7 +142,7 @@ def _insert_provider(db: Session, provider: Dict[str, Any]):
         "deqar_id": provider.get("deqar_id"),
         "eter_id": provider.get("eter_id"),
         "base_id": provider.get("id"),
-        "schac_code": _extract_schac(provider),
+        "schac_code": manifest.extract_schac(provider),
         "metadata": json.dumps(provider),
         "manifest_json": json.dumps(_build_manifest_json(provider)),
         "name_concat": _build_name_concat(provider),
@@ -213,7 +185,7 @@ def _update_provider(db: Session, provider_uuid, provider: Dict[str, Any]) -> No
             "provider_uuid": provider_uuid,
             "deqar_id": provider.get("deqar_id"),
             "eter_id": provider.get("eter_id"),
-            "schac_code": _extract_schac(provider),
+            "schac_code": manifest.extract_schac(provider),
             "metadata": json.dumps(provider),
             "name_concat": _build_name_concat(provider),
             "provider_name": provider.get("name_primary", ""),

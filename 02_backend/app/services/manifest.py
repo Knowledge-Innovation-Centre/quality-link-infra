@@ -98,16 +98,19 @@ def decrypt_auth_value(encrypted_b64: str, private_key_pem: str) -> str:
     return plaintext.decode("utf-8")
 
 
+def extract_schac(metadata: Dict) -> Optional[str]:
+    for identifier in metadata.get("identifiers", []):
+        if identifier.get("resource") == "SCHAC":
+            return identifier.get("identifier")
+    return None
+
+
 def pull_manifest(provider_uuid: str, metadata: Dict, db: Session) -> Dict[str, Any]:
     """
     Pulls a manifest file for the given provider
     """
 
-    identifiers = metadata.get("identifiers", [])
-    schac_identifier = next(
-        (item["identifier"] for item in identifiers if item.get("resource") == "SCHAC"),
-        None,
-    )
+    schac_identifier = extract_schac(metadata)
     website_link = metadata.get("website_link")
 
     if not schac_identifier and not website_link:
@@ -358,7 +361,7 @@ def prepare_test_combinations(schac_identifier: Optional[str], website_link: Opt
     test_combinations: List[dict] = []
 
     if schac_identifier:
-        test_combinations.append({"domain": schac_identifier, "type": "DNS", "check": False, "path": None})
+        test_combinations.append({"domain": schac_identifier, "type": "DNS", "check": None, "path": None})
         tested_combinations.add((schac_identifier, "DNS"))
         test_combinations.append({"domain": schac_identifier, "type": ".well-known", "check": None, "path": None})
         tested_combinations.add((schac_identifier, ".well-known"))
