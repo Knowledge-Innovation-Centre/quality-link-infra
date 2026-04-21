@@ -160,16 +160,11 @@ def get_provider(db: Session, provider_uuid: UUID) -> Dict[str, Any]:
 
 def resolve_provider_uuid(db: Session, value: str) -> UUID:
     """Accept a UUID string or an ETER/DEQAR id and return the provider UUID."""
-    try:
-        return UUID(value)
-    except ValueError:
-        pass
-
     rows = db.execute(
         text("""
             SELECT provider_uuid
             FROM provider
-            WHERE eter_id = :v OR deqar_id = :v
+            WHERE eter_id = :v OR deqar_id = :v OR provider_uuid::text = :v
             LIMIT 2
         """),
         {"v": value},
