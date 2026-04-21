@@ -8,7 +8,6 @@ from rich.table import Table
 
 from config import DEFAULT_VOCABULARIES, DEQAR_API_URL
 from database import SessionLocal
-from dependencies import redis_client
 from services.course_fetch import run_course_fetch
 from services.datalake import queue_provider_data
 from services.deqar import (
@@ -109,7 +108,7 @@ def providers_refresh_manifest(
 
         try:
             with console.status(f"Pulling manifest for {provider_uuid}..."):
-                result = refresh_manifest_for_provider(db, redis_client, provider_uuid)
+                result = refresh_manifest_for_provider(db, provider_uuid)
         except HTTPException as e:
             _die(str(e.detail))
 
@@ -239,7 +238,6 @@ def providers_fetch(
                 # Validate only — do not schedule a BackgroundTask from the CLI.
                 check = queue_provider_data(
                     db,
-                    redis_client,
                     provider_uuid,
                     version_uuid,
                     UUID(s["source_uuid"]),

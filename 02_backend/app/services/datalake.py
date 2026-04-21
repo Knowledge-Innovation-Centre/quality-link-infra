@@ -2,17 +2,16 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 from uuid import UUID
 
-import redis
 from fastapi import BackgroundTasks, HTTPException, status
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from services.course_fetch import run_course_fetch
+from services.locks import NS_PULL_MANIFEST, is_locked
 
 
 def queue_provider_data(
     db: Session,
-    redis_client: "redis.Redis",
     provider_uuid: UUID,
     source_version_uuid: UUID,
     source_uuid: UUID,
@@ -31,7 +30,7 @@ def queue_provider_data(
     execution (HTTP use). Without it, the caller is expected to run the
     pipeline in the foreground (CLI use).
     """
-    if redis_client.exists(f"pull_manifest:{provider_uuid}"):
+    if is_locked(db, NS_PULL_MANIFEST, str(provider_uuid)):
         return {
             "status": "busy",
             "message": "Manifest is currently being pulled for this provider. Please try again later.",

@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from config import MINIO_BUCKET_NAME
 from database import get_db
-from dependencies import get_minio_client, redis_client
+from dependencies import get_minio_client
 from services.datalake import queue_provider_data as queue_provider_data_service
 
 router = APIRouter(tags=["Datalake"])
@@ -294,7 +294,7 @@ async def queue_provider_data(
     db: Session = Depends(get_db),
 ) -> Dict[str, Any]:
     result = queue_provider_data_service(
-        db, redis_client, provider_uuid, source_version_uuid, source_uuid, source_path,
+        db, provider_uuid, source_version_uuid, source_uuid, source_path,
         background_tasks=background_tasks,
     )
     if result.get("status") == "busy":

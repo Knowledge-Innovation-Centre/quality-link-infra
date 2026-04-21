@@ -5,7 +5,6 @@ uvicorn[standard]
 # Data stores
 sqlalchemy
 psycopg2-binary
-redis
 minio
 
 # Config / CLI

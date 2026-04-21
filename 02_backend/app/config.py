@@ -10,8 +10,6 @@ DB_PORT = os.getenv("DB_PORT", "5432")
 DB_NAME = os.getenv("DB_NAME", "backend")
 DATABASE_URL = f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
 
-BACKEND_REDIS_URL = os.getenv("BACKEND_REDIS_URL", "redis://localhost:6379/1")
-
 MINIO_HOST = os.getenv("MINIO_HOST", "minio:9000")
 MINIO_ROOT_USER = os.getenv("MINIO_ROOT_USER")
 MINIO_ROOT_PASSWORD = os.getenv("MINIO_ROOT_PASSWORD")

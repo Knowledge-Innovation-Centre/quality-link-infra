@@ -3,7 +3,6 @@ from urllib.parse import urlparse
 from base64 import b64decode
 from uuid import UUID
 
-import redis
 from fastapi import HTTPException, status
 
 from sqlalchemy import text
@@ -19,32 +18,26 @@ import json
 import uuid as uuid_lib
 from datetime import date
 
+from services.locks import NS_PULL_MANIFEST, is_locked, release, try_acquire
+
 
 def refresh_manifest_for_provider(
-    db: Session, redis_client: "redis.Redis", provider_uuid: UUID
+    db: Session, provider_uuid: UUID
 ) -> Dict[str, Any]:
-    """Acquire the per-provider lock, fetch metadata, and run pull_manifest.
+    """Acquire the per-provider advisory lock, fetch metadata, and run
+    pull_manifest.
 
-    Returns {"status": "busy", ...} when the lock is held. Raises HTTPException
-    for missing providers or infrastructure errors. Otherwise returns the
-    pull_manifest result dict.
+    Returns {"status": "busy", ...} when the lock is already held by another
+    session. Raises HTTPException for missing providers or infrastructure
+    errors. Otherwise returns the pull_manifest result dict.
     """
-    lock_key = f"pull_manifest:{provider_uuid}"
-    lock_uuid = str(uuid_lib.uuid4())
+    provider_key = str(provider_uuid)
 
-    try:
-        acquired = redis_client.set(lock_key, lock_uuid, ex=60, nx=True)
-    except redis.RedisError as err:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Redis error: {err}",
-        )
-
-    if not acquired:
+    if not try_acquire(db, NS_PULL_MANIFEST, provider_key):
         return {
             "status": "busy",
             "message": "This provider is currently being processed. Please try again later.",
-            "provider_uuid": str(provider_uuid),
+            "provider_uuid": provider_key,
         }
 
     try:
@@ -70,7 +63,16 @@ def refresh_manifest_for_provider(
             detail=f"Unexpected error: {e}",
         )
     finally:
-        safe_release_lock(redis_client, lock_key, lock_uuid)
+        try:
+            release(db, NS_PULL_MANIFEST, provider_key)
+        except Exception:
+            # Lock will be released when the connection ends, so we don't
+            # propagate — but do log so leaks are visible.
+            import logging
+            logging.getLogger(__name__).warning(
+                "Failed to release pull_manifest lock for %s", provider_key,
+                exc_info=True,
+            )
 
 def get_private_key(db: Session) -> Optional[str]:
     result = db.execute(
@@ -388,22 +390,3 @@ def prepare_test_combinations(schac_identifier: Optional[str], website_link: Opt
     return test_combinations
 
 
-def safe_release_lock(redis_client, lock_key: str, lock_uuid: str) -> bool:
-    lua_script = """
-    if redis.call("get", KEYS[1]) == ARGV[1] then
-        return redis.call("del", KEYS[1])
-    else
-        return 0
-    end
-    """
-    try:
-        result = redis_client.eval(lua_script, 1, lock_key, lock_uuid)
-        if result == 1:
-            print(f"Lock released: {lock_key}")
-            return True
-        else:
-            print(f"Lock not owned or already expired: {lock_key}")
-            return False
-    except Exception as e:
-        print(f"Error releasing lock: {e}")
-        return False
