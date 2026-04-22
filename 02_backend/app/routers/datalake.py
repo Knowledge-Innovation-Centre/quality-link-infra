@@ -47,7 +47,7 @@ async def list_datalake_files_v2(
 
         if date:
             try:
-                date_folder = datetime.strptime(date, "%Y-%m-%d").strftime("%Y-%m-%d")
+                datetime.strptime(date, "%Y-%m-%d").strftime("%Y-%m-%d")
             except ValueError:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
@@ -65,8 +65,7 @@ async def list_datalake_files_v2(
                 {"p": str(provider_uuid), "v": str(source_version_uuid), "s": str(source_uuid)},
             ).scalar()
             if latest_row:
-                date_folder = latest_row.isoformat()
-                date = date_folder
+                date = latest_row.isoformat()
                 date_source = "transaction"
             else:
                 raise HTTPException(
@@ -97,7 +96,7 @@ async def list_datalake_files_v2(
                 "p": str(provider_uuid),
                 "v": str(source_version_uuid),
                 "s": str(source_uuid),
-                "d": date_folder,
+                "d": date,
             },
         ).fetchall()
 
@@ -109,7 +108,7 @@ async def list_datalake_files_v2(
                 "full_path": full_path,
                 "filename": full_path.split("/")[-1] if full_path else None,
                 "last_modified": last_modified.isoformat() if last_modified else None,
-                "push_status": False,
+                "push_status": full_path is not None and full_path == source_info["last_file_pushed_path"],
                 "trans_uuid": str(tx[0]),
                 "run_number": tx[1],
                 "status": tx[2],
@@ -129,9 +128,6 @@ async def list_datalake_files_v2(
                 "files": [],
                 "count": 0,
             }
-
-        if date_folder == today_date:
-            file_list[-1]["push_status"] = True
 
         return {
             "status": "success",
