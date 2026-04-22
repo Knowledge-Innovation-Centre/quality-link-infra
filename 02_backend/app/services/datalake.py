@@ -15,7 +15,6 @@ def queue_provider_data(
     provider_uuid: UUID,
     source_version_uuid: UUID,
     source_uuid: UUID,
-    source_path: str,
     *,
     background_tasks: Optional[BackgroundTasks] = None,
 ) -> Dict[str, Any]:
@@ -89,7 +88,7 @@ def queue_provider_data(
 
     if background_tasks is not None:
         background_tasks.add_task(
-            run_course_fetch, provider_uuid, source_version_uuid, source_uuid, source_path
+            run_course_fetch, provider_uuid, source_version_uuid, source_uuid
         )
 
     return {

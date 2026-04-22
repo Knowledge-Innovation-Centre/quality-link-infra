@@ -267,7 +267,6 @@ def providers_fetch(
                     provider_uuid,
                     version_uuid,
                     UUID(s["source_uuid"]),
-                    s["source_path"],
                 )
             except HTTPException as e:
                 console.print(
@@ -290,7 +289,7 @@ def providers_fetch(
     for s, label in validated:
         console.print(f"[cyan]fetching[/cyan] {label} ({s['source_uuid']})...")
         run_course_fetch(
-            provider_uuid, version_uuid, UUID(s["source_uuid"]), s["source_path"]
+            provider_uuid, version_uuid, UUID(s["source_uuid"])
         )
         fetched += 1
 

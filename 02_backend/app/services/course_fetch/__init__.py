@@ -41,7 +41,6 @@ def run_course_fetch(
     provider_uuid: UUID,
     source_version_uuid: UUID,
     source_uuid: UUID,
-    source_path: str,
 ) -> None:
     """Bronze → silver → gold → transaction. Errors are logged, not raised.
 
@@ -49,8 +48,8 @@ def run_course_fetch(
     since this runs in a FastAPI BackgroundTask after the response has been sent.
     """
     logger.info(
-        "course_fetch: provider=%s source=%s version=%s path=%s",
-        provider_uuid, source_uuid, source_version_uuid, source_path,
+        "course_fetch: provider=%s source=%s version=%s",
+        provider_uuid, source_uuid, source_version_uuid,
     )
     minio_client = get_minio_client()
 

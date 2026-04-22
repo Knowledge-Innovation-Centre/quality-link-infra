@@ -120,20 +120,18 @@ export class ProvidersApi {
 
   /**
    * Queue provider data for fetching from source
-   * @param params - Provider UUID, source version UUID, source UUID, and source path
+   * @param params - Provider UUID, source version UUID, source UUID
    * @returns Promise with queue response
    */
   async queueProviderData(params: {
     provider_uuid: string;
     source_version_uuid: string;
     source_uuid: string;
-    source_path: string;
   }): Promise<{ status: string; message: string }> {
     const queryParams = new URLSearchParams({
       provider_uuid: params.provider_uuid,
       source_version_uuid: params.source_version_uuid,
       source_uuid: params.source_uuid,
-      source_path: params.source_path,
     });
     const endpoint = `${this.basePath}/queue_provider_data?${queryParams.toString()}`;
 

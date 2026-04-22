@@ -290,11 +290,10 @@ async def queue_provider_data(
     provider_uuid: UUID = Query(..., title="Provider UUID"),
     source_version_uuid: UUID = Query(..., title="Source Version UUID"),
     source_uuid: UUID = Query(..., title="Source UUID"),
-    source_path: str = Query(..., title="Source Path"),
     db: Session = Depends(get_db),
 ) -> Dict[str, Any]:
     result = queue_provider_data_service(
-        db, provider_uuid, source_version_uuid, source_uuid, source_path,
+        db, provider_uuid, source_version_uuid, source_uuid,
         background_tasks=background_tasks,
     )
     if result.get("status") == "busy":

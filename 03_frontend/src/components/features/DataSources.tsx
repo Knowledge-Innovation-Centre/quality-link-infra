@@ -28,7 +28,7 @@ interface DataSourcesProps {
   dataSources: DataSource[]
   onPreviewJson: (filename: string, fullPath?: string) => void
   onDownload: (filename: string, fullPath?: string) => void
-  onRefresh?: (sourceId: string, sourcePath: string) => void
+  onRefresh?: (sourceId: string) => void
   onExpand?: (sourceId: string, sourcePath: string) => void
   onDateChange?: (sourceId: string, sourcePath: string, date: string) => void
   isRefreshing?: boolean
@@ -233,7 +233,7 @@ export default function DataSources({
                         </div>
                         {onRefresh && source.sourcePath && (
                           <button
-                            onClick={() => onRefresh(source.id, source.sourcePath!)}
+                            onClick={() => onRefresh(source.id)}
                             disabled={isRefreshing}
                             className="bg-brand-base text-white px-3 py-2 rounded-lg text-xs font-medium hover:opacity-90 disabled:opacity-50 flex items-center gap-2 transition-opacity"
                           >

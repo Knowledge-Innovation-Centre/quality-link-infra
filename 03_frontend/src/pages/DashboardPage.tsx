@@ -281,7 +281,7 @@ export default function DashboardPage() {
     }
   }
 
-  const handleRefreshDataLake = async (sourceUuid: string, sourcePath: string) => {
+  const handleRefreshDataLake = async (sourceUuid: string) => {
     if (!providerData) return
 
     setIsDataLakeRefreshing(true)
@@ -313,7 +313,6 @@ export default function DashboardPage() {
         provider_uuid: providerData.provider.provider_uuid,
         source_version_uuid: providerData.source_version.source_version_uuid,
         source_uuid: sourceUuid,
-        source_path: sourcePath,
       })
 
       // Complete progress
