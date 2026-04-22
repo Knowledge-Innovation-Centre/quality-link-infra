@@ -8,7 +8,7 @@ from rich.table import Table
 
 from config import DEFAULT_VOCABULARIES, DEQAR_API_URL
 from database import SessionLocal
-from services.course_fetch import run_course_fetch
+from services.course_fetch.main import run_course_fetch
 from services.datalake import queue_provider_data
 from services.deqar import (
     fetch_deqar_providers,

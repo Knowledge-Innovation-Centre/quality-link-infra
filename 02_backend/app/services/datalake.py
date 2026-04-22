@@ -6,7 +6,7 @@ from fastapi import BackgroundTasks, HTTPException, status
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from services.course_fetch import run_course_fetch
+from services.course_fetch.main import run_course_fetch
 from services.locks import NS_COURSE_FETCH, NS_PULL_MANIFEST, is_locked
 
 
