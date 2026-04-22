@@ -132,7 +132,7 @@ def get_provider(db: Session, provider_uuid: UUID) -> Dict[str, Any]:
             text("""
                 SELECT source_uuid, source_version_uuid, source_path, source_type,
                        source_version, created_at, updated_at, source_name,
-                       last_file_pushed_date
+                       last_file_pushed_date, source_id
                 FROM source
                 WHERE source_version_uuid = :source_version_uuid
             """),
@@ -149,6 +149,7 @@ def get_provider(db: Session, provider_uuid: UUID) -> Dict[str, Any]:
                 "created_at": source[5].isoformat() if source[5] else None,
                 "updated_at": source[6].isoformat() if source[6] else None,
                 "last_file_pushed_date": source[8].isoformat() if source[8] else None,
+                "source_id": source[9],
             })
 
     return response
