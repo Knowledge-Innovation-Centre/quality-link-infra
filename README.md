@@ -1,5 +1,20 @@
-# Quality Link Pipeline (QL-Pipeline)
-A data integration platform for processing and indexing educational data from European higher education institutions. The system discovers, transforms, and indexes course metadata, provider information, and quality assurance data from sources like DEQAR and university APIs.
+# QualityLink Data Aggregator
+
+A data integration platform that discovers, transforms, and indexes data on learning opportunities (courses, programmes, micro-credentials) from European higher education institutions. The registry of providers is seeded from DEQAR; each provider's data sources are discovered via DNS TXT records and `.well-known` manifest URLs, then fetched and projected into an RDF triplestore (Jena Fuseki) and a search index (Meilisearch).
+
+This software implements the [technical specifications](https://quality-link.eu/technical-specs/) developed as part of the [QualityLink project](https://quality-link.eu/) as a pilot version and technology demonstrator.
+
+The aggregator supports data sources using the following standards:
+
+- [ELM](https://europa.eu/europass/elm-browser/index.html), version 3
+- [OOAPI](https://openonderwijsapi.nl/#/), version 5
+- [Edu-API](https://www.1edtech.org/standards/edu-api), version 1.0
+
+The deployment of the pilot version for the project can be found at:
+
+- Aggregator dashboard: <https://dashboard.app.quality-link.eu/>
+- Course catalogue: <https://courses.app.quality-link.eu/> (repository see [Knowledge-Innovation-Centre/course-catalogue](https://github.com/Knowledge-Innovation-Centre/course-catalogue))
+
 ## Table of Contents
 - [Overview](#overview)
 - [Architecture](#architecture)
@@ -7,253 +22,289 @@ A data integration platform for processing and indexing educational data from Eu
 - [Configuration](#configuration)
 - [Services](#services)
 - [API Reference](#api-reference)
+- [Admin CLI](#admin-cli)
 - [Data Pipeline](#data-pipeline)
 - [Development](#development)
 - [License](#license)
+
 ## Overview
+
 QL-Pipeline provides:
-- **Provider Discovery**: Automated discovery of university data manifests via DNS TXT records and `.well-known` URLs
-- **Data Transformation**: RDF/Turtle to JSON-LD conversion with SPARQL query support
-- **Full-Text Search**: Meilisearch integration for searching courses and institutions
-- **Workflow Orchestration**: MageAI-powered ETL pipelines
-- **Data Lake Storage**: MinIO-based hierarchical storage for course data
-- **Version Control**: Source versioning with compound identifiers (date + version ID)
+- **Provider registry** seeded from the DEQAR API and stored in PostgreSQL
+- **Discovery of data source** manifests via DNS TXT records and `.well-known` URLs
+- **ETL pipeline** (bronze → silver → gold) running in-process in the backend
+- **RDF storage** in Jena Fuseki with three named graphs (courses, reference, vocabulary)
+- **Full-text search** via Meilisearch
+- **Data lake** in MinIO for raw source snapshots
+- **Signing keypair** served publicly so providers can verify QL-signed payloads
+
 ## Architecture
+
+Five Docker services orchestrated via `docker-compose.yml`, designed for [Coolify](https://coolify.io/) deployment (no ports exposed by default). Meilisearch is expected to run externally in production; use `docker-compose.override.yml` to run it localliy (see [Development](#development) below).
+
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│                           Frontend (React)                          │
-│                         Port 3333 - Dashboard                       │
+│                         Frontend (React + Vite)                     │
+│                              Dashboard UI                           │
 └─────────────────────────────────────────────────────────────────────┘
                                     │
                                     ▼
 ┌─────────────────────────────────────────────────────────────────────┐
-│                        Backend (FastAPI)                            │
-│                    Port 8000 - REST API                             │
+│                      Backend (FastAPI + Typer CLI)                  │
+│              REST API + in-process ETL (bronze → silver → gold)     │
 └─────────────────────────────────────────────────────────────────────┘
         │                 │                │                 │
         ▼                 ▼                ▼                 ▼
 ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐
-│  PostgreSQL  │  │   Dragonfly  │  │    MinIO     │  │ Jena Fuseki  │
-│  Port 5432   │  │  Port 6379   │  │  Port 9000   │  │  Port 3031   │
-│   Database   │  │ Redis Cache  │  │ Object Store │  │  Triplestore │
+│  PostgreSQL  │  │    MinIO     │  │ Jena Fuseki  │  │ Meilisearch  │
+│   Registry   │  │  Data Lake   │  │  Triplestore │  │   (external) │
+│  + advisory  │  │  (raw files) │  │  3 named     │  │  full-text   │
+│    locks     │  │              │  │  graphs      │  │  index       │
 └──────────────┘  └──────────────┘  └──────────────┘  └──────────────┘
-        │                 │                │                 │
-        ▼                 ▼                ▼                 ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                          MageAI                                     │
-│                    Port 6789 - ETL Workflows                        │
-└─────────────────────────────────────────────────────────────────────┘
 ```
+
+The ETL runs as a FastAPI `BackgroundTask` (or synchronously via the CLI) — there is no separate worker service currently. For periodic runs in production (discover manifests, refetch data sources, etc.), a suitable scheduler will be added.
+
 ### Directory Structure
+
 ```
 quality-link-infra/
-├── 00_postgres/          # Database initialization scripts
-├── 01_mage/              # MageAI Dockerfile and requirements
-├── 02_backend/           # FastAPI application
+├── 00_postgres/            # Postgres Dockerfile + schema/migrations
+│   ├── 00_init.sql
+│   └── 0N_*.sql            # Additive migrations applied at image build
+├── 02_backend/             # FastAPI app + Typer admin CLI
 │   ├── app/
-│   │   └── main.py       # API endpoints
-│   └── requirements.txt
-├── 03_frontend/          # React dashboard
-│   └── src/
-├── 04_notebook/          # Jupyter notebooks and sample data
+│   │   ├── main.py         # App factory, mounts routers + /api/v1 sub-app
+│   │   ├── cli.py          # Command-line interface
+│   │   ├── config.py
+│   │   ├── database.py
+│   │   ├── dependencies.py
+│   │   ├── routers/        # HTTP adapters (thin)
+│   │   ├── services/       # Business logic
+│   │   │   └── course_fetch/
+│   │   │       ├── bronze.py       # Raw → MinIO
+│   │   │       ├── silver.py       # MinIO → RDF → Fuseki
+│   │   │       ├── gold.py         # Fuseki → JSON-LD → Meilisearch
+│   │   │       └── source_types/   # elm, ooapi, eduapi adapters
+│   │   └── schema/frame.json       # JSON-LD frame
+│   ├── requirements.in     # Source dependencies
+│   └── requirements.txt    # Pinned (compiled from .in)
+├── 03_frontend/            # React 18 + TypeScript + Vite + Tailwind
 ├── docker-compose.yml
-├── .example.env          # Environment template
+├── docker-compose.override.yml   # Local dev overrides (ports, Meili)
+├── .example.env
+├── CLAUDE.md
 └── README.md
 ```
+
 ## Quick Start
+
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/your-org/quality-link-infra.git
+   git clone https://github.com/Knowledge-Innovation-Centre/quality-link-infra.git
    cd quality-link-infra
    ```
+
 2. **Create environment file**
    ```bash
    cp .example.env .env
    ```
-3. **Configure environment variables**
-   Edit `.env` and set your credentials:
-   
-   Examples:-
-   ```bash
-   # Required: Set secure passwords
-   POSTGRES_PASSWORD=your_secure_password
-   DRAGONFLY_PASSWORD=your_redis_password
-   MINIO_ROOT_PASSWORD=your_minio_password
-   FUSEKI_ADMIN_PASSWORD=your_fuseki_password
-   
-   # Required: MageAI admin credentials
-   DEFAULT_OWNER_EMAIL=admin@example.com
-   DEFAULT_OWNER_USERNAME=admin
-   DEFAULT_OWNER_PASSWORD=your_mage_password
-   ```
-4. **Start the services**
+
+3. **Configure credentials** — at minimum set `POSTGRES_PASSWORD`, `MINIO_ROOT_PASSWORD`, `FUSEKI_ADMIN_PASSWORD`, `MEILISEARCH_URL`, `MEILISEARCH_API_KEY`, `VITE_API_URL`, `VITE_RECAPTCHA_SITE_KEY`. See [Configuration](#configuration).
+
+4. **Start the stack**
    ```bash
    docker-compose up -d
    ```
-5. **Verify deployment**
+
+5. **Verify**
    ```bash
-   # Check all services are running
    docker-compose ps
-   
-   # Test backend health
-   curl http://localhost:8000/health/database
+   docker-compose logs -f backend
    ```
-6. **Access the services**
-   | Service     | URL                          | Purpose                    |
-   |-------------|------------------------------|----------------------------|
-   | Frontend    | http://localhost:3333        | Dashboard UI               |
-   | Backend API | http://localhost:8000        | REST API                   |
-   | MageAI      | http://localhost:6789        | ETL workflow management    |
-   | MinIO       | http://localhost:9001        | Object storage console     |
-   | Fuseki      | http://localhost:3031        | SPARQL endpoint            |
+
+Ports are not exposed by default. For local development with exposed ports and a local Meilisearch, see [Development](#development).
+
 ## Configuration
-### Environment Variables
-See `.example.env` for all available options. Key configurations:
-**PostgreSQL**
+
+All configuration flows via environment variables. See `.example.env` for the full template and `02_backend/app/config.py` for optional overrides.
+
+**Required**
 ```bash
 POSTGRES_PASSWORD=<secure_password>
-```
-**Dragonfly (Redis)**
-```bash
-DRAGONFLY_PASSWORD=<secure_password>
-```
-**MinIO**
-```bash
-MINIO_ROOT_USER=minio_user
 MINIO_ROOT_PASSWORD=<secure_password>
-```
-**Fuseki**
-```bash
 FUSEKI_ADMIN_PASSWORD=<secure_password>
-```
-**Mage AI**
-```bash
-DEFAULT_OWNER_EMAIL=your_email@example.com
-DEFAULT_OWNER_USERNAME=your_username
-DEFAULT_OWNER_PASSWORD=<secure_password>
-```
-**Backend**
-```bash
-DB_NAME=backend
-```
-**Frontend**
-```bash
+MEILISEARCH_URL=<meilisearch URL>
+MEILISEARCH_API_KEY=<meilisearch master/admin key>
 VITE_API_URL=<backend external URL>
-VITE_RECAPTCHA_SITE_KEY=<API key for Recaptcha>
+VITE_RECAPTCHA_SITE_KEY=<reCAPTCHA site key> # either
+VITE_RECAPTCHA_ENABLED=false # or
 ```
-### Expose Ports
-This repository is designed for deployment using [Coolify](https://coolify.io/). Hence no ports are exposed in the Docker Compose config by default. To expose ports for local development or testing, see `docker-compose.override.yml` example under Development below.
+
+**Optional** (defaults shown)
+```bash
+MINIO_BUCKET_NAME=quality-link-storage
+FUSEKI_DATASET_NAME=qualitylink
+MEILISEARCH_INDEX=ql_courses
+DEQAR_API_URL=https://backend.testzone.eqar.eu/connectapi/v1/providers/
+```
+
+The backend also accepts overrides for the three Fuseki graph IRIs and the default controlled-vocabulary scheme URIs; see `02_backend/app/config.py`.
 
 ### Database Schema
-The PostgreSQL database includes the following tables:
-- `provider` - Higher education institution records
-- `source_version` - Versioned source configurations per provider
-- `source` - Individual data sources within a version
-- `transaction` - Processing transaction log
+
+PostgreSQL is initialised from `00_postgres/00_init.sql` with additive migrations (`01_*.sql`, `02_*.sql`, …) applied at image build time. Tables:
+
+- `provider` — institution registry (DEQAR / ETER / SCHAC identifiers; manifest probe log in `manifest_json`)
+- `source_version` — a dated snapshot of a provider's manifest (`version_date` + `version_id`)
+- `source` — individual data source within a version (type, path, last fetch state)
+- `transaction` — processing log, unique per (provider, version, date)
+- `ql_cred` — QL signing keypair; the active entry is served by `/api/v1/public-key`
+
 ## Services
-### Backend API
-FastAPI application providing REST endpoints for:
-- Provider management (`/get_all_providers`, `/get_provider`)
-- Manifest discovery (`/pull_manifest_v2`)
-- Data lake operations (`/list_datalake_files_v2`, `/download_datalake_file`)
-- Queue management (`/queue_provider_data`)
-### MageAI
-ETL workflow orchestration with:
-- Custom Python environment (see `01_mage/requirements.txt`)
-- PostgreSQL backend for metadata
-- Redis integration for task queuing
-### Apache Jena Fuseki
-Triplestore available on Port 3031:
-- TDB2 storage backend
-- SPARQL query endpoint
-- Data write and update support
+
+### Backend (FastAPI)
+Hosts both the REST API and the in-process ETL pipeline. Key modules:
+- `routers/` — thin HTTP adapters (`health`, `providers`, `manifest`, `datalake`, `credentials`)
+- `services/` — business logic (`manifest`, `providers`, `deqar`, `datalake`, `course_fetch/*`, `fuseki`, `keys`, `locks`, `vocabulary`)
+- `cli.py` — Typer admin CLI (see [Admin CLI](#admin-cli))
+
+A separate public sub-app is mounted at `/api/v1` with wildcard CORS so any provider domain can fetch the public key.
+
+### PostgreSQL
+Operational database. Schema is baked into the image from `00_postgres/*.sql`. Concurrency control (e.g. preventing overlapping manifest pulls for the same provider) uses session-scoped advisory locks via `pg_try_advisory_lock(ns, hashtext(key))`.
+
 ### MinIO
-S3-compatible storage organized as:
+S3-compatible data lake. Raw source snapshots are organised as:
+
 ```
-datalake/
+{bucket}/
 └── courses/
     └── {provider_uuid}/
         └── {source_version_uuid}/
             └── {source_uuid}/
                 ├── source_manifest.json
-                └── {date}/
-                    └── {files}
+                └── {YYYY-MM-DD}/
+                    └── {raw files}
 ```
+
+### Apache Jena Fuseki
+Triplestore with TDB2 backend, using three named graphs:
+- **courses** — provider-ingested course data
+- **reference** — DEQAR-sourced provider registry
+- **vocabulary** — EU controlled vocabularies (ISCED-F, EQF levels, languages, …)
+
+### Meilisearch
+Full-text search index over the framed JSON-LD course documents. Expected to run externally in production; run it locally via `docker-compose.override.yml`.
+
+The Meilisearch index is used by the public-facing [course catalogue](https://github.com/Knowledge-Innovation-Centre/course-catalogue).
+
 ## API Reference
-### Health Check
-```bash
-GET /health/database
+
+### Health
 ```
-### List Providers
-```bash
-GET /get_all_providers?page=1&page_size=10&search_provider=university
+GET  /
+GET  /health/database
 ```
-### Get Provider Details
-```bash
-GET /get_provider?provider_uuid={uuid}
+
+### Providers
 ```
-### Pull Manifest
-Discovers and processes a provider's data manifest:
-```bash
+GET  /get_all_providers?search_provider=…&with_data=false&page=1&page_size=10
+GET  /get_provider?provider_uuid={uuid}
+```
+
+### Manifest discovery
+```
 POST /pull_manifest_v2?provider_uuid={uuid}
 ```
-The endpoint:
-1. Retrieves SCHAC identifier from provider metadata
-2. Checks DNS TXT records for manifest URL
-3. Falls back to `.well-known` discovery
-4. Parses manifest and creates source versions
-### Queue Data Processing
+Runs DNS TXT + `.well-known` probes, validates the JSON/YAML manifest, and upserts `source_version` + `source` rows. Returns 423 if another pull is in-flight for the same provider.
+
+### Data lake
+```
+GET  /list_datalake_dates?provider_uuid=…&source_version_uuid=…&source_uuid=…
+GET  /list_datalake_files_v2?provider_uuid=…&source_version_uuid=…&source_uuid=…&date=YYYY-MM-DD
+GET  /download_datalake_file?file_path=…&preview=false
+POST /queue_provider_data?provider_uuid=…&source_version_uuid=…&source_uuid=…
+```
+`queue_provider_data` validates the request and schedules the bronze → silver → gold pipeline as a FastAPI `BackgroundTask`. Returns 423 if a manifest pull is in-flight, or 410 if the caller is holding an outdated `source_version_uuid`.
+
+### Credentials (public sub-app at `/api/v1`)
+```
+GET  /api/v1/public-key        # JSON with PEM + timestamps
+GET  /api/v1/public-key/pem    # PEM as text/plain
+```
+Wildcard CORS — any provider domain can fetch the active signing key.
+
+## Admin CLI
+
+The Typer CLI is the preferred way to drive provider operations manually (runs in-process, so no HTTP/BackgroundTask round-trip).
+
 ```bash
-POST /queue_provider_data?provider_uuid={uuid}&source_version_uuid={uuid}&source_uuid={uuid}&source_path={path}
+docker-compose run --rm backend python cli.py vocabulary fetch                           # fetch DEFAULT_VOCABULARIES from EU controlled vocabularies
+docker-compose run --rm backend python cli.py provider refresh				 # pull registry from DEQAR
+docker-compose run --rm backend python cli.py provider list [SEARCH] [--with-data]       # list/search providers
+docker-compose run --rm backend python cli.py provider manifest <UUID|ETER_ID|DEQAR_ID>  # run DNS + .well-known manifest discovery
+docker-compose run --rm backend python cli.py provider sources  <UUID|ETER_ID|DEQAR_ID>  # show manifest and latest version's sources
+docker-compose run --rm backend python cli.py provider fetch    <UUID|ETER_ID|DEQAR_ID>  # trigger data source ftech (bronze→silver→gold)
 ```
-Implements Redis-based locking to prevent concurrent processing of the same provider.
+
+Provider identifiers accept a UUID, ETER id, or DEQAR id — they're resolved via `services.providers.resolve_provider_uuid`.
+
 ## Data Pipeline
-### RDF Processing
-The `04_notebook/guide.ipynb` demonstrates the RDF to Meilisearch pipeline:
-1. Load RDF/Turtle data using rdflib
-2. Upload to Jena Fuseki
-3. Query via SPARQL
-4. Transform to flat JSON documents
-5. Index in Meilisearch
+
+`run_course_fetch(provider, version, source, path)` is called by both the HTTP `queue_provider_data` endpoint (via a `BackgroundTask`) and the `provider fetch` CLI command. It opens its own `SessionLocal` and runs three stages:
+
+1. **Bronze** — fetch raw data from the provider source, convert to RDF (ELM), write to MinIO at `courses/{provider_uuid}/{source_version_uuid}/{source_uuid}/{YYYY-MM-DD}/...`
+2. **Silver** — validate and enrich RDF data, upload to Fuseki's courses graph
+3. **Gold** — SPARQL → JSON-LD frame (`schema/frame.json`) → flat docs → Meilisearch index
+
+Per-source-type adapters live in `services/course_fetch/source_types/` (`elm`, `ooapi`, `eduapi`). Each run is logged in the `transaction` table (unique per provider+version+date).
+
 ### Manifest Discovery Flow
+
 ```
-                                            Provider Metadata
-                                                    │
-                                                    ▼
-                                            ┌──────────────────┐
-                                            │ Extract SCHAC ID │
-                                            │ and Website URL  │
-                                            └──────────────────┘
-                                                │            │ (If URL does not lead to a manifest file)
-                                                │            ▼
-                                                │        ┌──────────────────┐          
-                                                │        │  DNS TXT Lookup  │          
-                                                │        │  for m= record   │
-                                                │        └──────────────────┘
-                                                │            │  
-                                                ▼            ▼
-                                ┌──────────────────┐ ┌────────────────────────────────┐
-                                │   Validate URL   │ │ .well-known URLs               │
-                                │                  │ │                                │
-                                │                  │ │ - /quality-link-manifest       │
-                                │    (JSON/YAML)   │ │ - /quality-link-manifest.json  │
-                                │                  │ │ - /quality-link-manifest.yaml  │
-                                └──────────────────┘ └────────────────────────────────┘
-                                                │         │
-                                                │         │
-                                                │         │  
-                                                │         │
-                                                ▼         ▼
-                                            ┌──────────────────┐
-                                            │ Create Source    │
-                                            │ Version Record   │
-                                            └──────────────────┘
+                 Provider metadata (DEQAR)
+                            │
+                            ▼
+          Extract SCHAC identifier + website_link
+                            │
+                            ▼
+          Build probe list (up to 6, tried in order):
+            · SCHAC domain           × {DNS, .well-known}
+            · website domain         × {DNS, .well-known}
+            · website w/o "www."     × {DNS, .well-known}
+                            │
+              For each (domain, type) probe:
+            ┌───────────────┴────────────────┐
+            ▼                                ▼
+   ┌──────────────────┐        ┌──────────────────────────────┐
+   │ DNS TXT lookup   │        │ Try in order:                │
+   │ for m=<URL>      │        │  /.well-known/               │
+   │                  │        │    quality-link-manifest     │
+   │ → URL from the   │        │    …-manifest.json           │
+   │   TXT record     │        │    …-manifest.yaml           │
+   └──────────────────┘        └──────────────────────────────┘
+            │                                │
+            └───────────────┬────────────────┘
+                            ▼
+               Fetch + parse as JSON / YAML
+         Stop at first manifest containing "sources"
+                            │
+                            ▼
+         If sources differ from latest source_version:
+          insert new source_version + source rows
+                            │
+                            ▼
+    Record every probe outcome in provider.manifest_json;
+           update provider.last_manifest_pull
 ```
 
 ## Development
 
-### Local Docker
-For local development or testing, create a `docker-compose.override.yml` file using the following example to expose relevant ports and mount your local working directories into the relevant containers:
+### Local Docker (with exposed ports and a local Meilisearch)
+
+Create a `docker-compose.override.yml` alongside `docker-compose.yml`:
+
 ```yaml
 services:
 
@@ -279,23 +330,14 @@ services:
     ports:
       - "9001:9001"
 
-  mageai:
-    ports:
-      - "6789:6789"
-    volumes:
-      - $HOME/Git/quality-link-workflows:/home/src/ql
-    environment:
-      GIT_SYNC_ON_START: 0
-      GIT_USERNAME: your_git_username
-      GIT_EMAIL: "you@example.org"
-      GIT_ACCESS_TOKEN: ${GITHUB_TOKEN}
-
   backend:
     volumes:
       - ./02_backend/app:/app:ro
     command: ["uvicorn", "main:app", "--reload", "--host", "0.0.0.0", "--port", "8000"]
     ports:
       - "8000:8000"
+    depends_on:
+      - meili
 
   fuseki:
     ports:
@@ -305,98 +347,101 @@ volumes:
   meili_data:
 ```
 
-### Local (no containers)
-For backend development:
+### Backend (no containers)
 ```bash
 cd 02_backend
-python -m venv venv
-source venv/bin/activate
+python -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
 uvicorn app.main:app --reload
 ```
-For frontend development:
+
+`requirements.txt` is compiled from `requirements.in` — edit the `.in` file and re-pin when changing dependencies.
+
+### Frontend
 ```bash
 cd 03_frontend
 npm install
-npm run dev
+npm run dev     # Vite dev server; proxies /api to VITE_API_URL
+npm run build   # tsc && vite build
+npm run lint
 ```
-### Adding Python Dependencies
-**MageAI**: Add to `01_mage/requirements.txt` and rebuild:
+
+### Adding Python dependencies
+Edit `02_backend/requirements.in`, re-pin to `requirements.txt`, then:
 ```bash
-docker-compose build mageai
-docker-compose up -d mageai
+docker-compose build backend && docker-compose up -d backend
 ```
-**Backend**: Add to `02_backend/requirements.txt` and rebuild:
-```bash
-docker-compose build backend
-docker-compose up -d backend
-```
-### Running Notebooks
-The `04_notebook` directory contains Jupyter notebooks for data exploration. Mount the directory or run Jupyter separately with access to the Fuseki endpoint.
+
 ### Logs
 ```bash
-# All services
-docker-compose logs -f
-# Specific service
-docker-compose logs -f backend
+docker-compose logs -f              # all services
+docker-compose logs -f backend      # specific service
 ```
+
 ## Volumes
-Data persistence is managed through Docker volumes:
-| Volume            | Purpose                              |
-|-------------------|--------------------------------------|
-| postgres_data     | PostgreSQL database files            |
-| dragonfly_data    | Redis snapshots                      |
-| minio_data        | Object storage data                  |
-| mageai_projects   | MageAI project files                 |
-| mageai_data       | MageAI internal data                 |
-| fuseki-data       | Fuseki triplestore                   |
-| fuseki-config     | Fuseki configuration                 |
-| fuseki-backups    | Fuseki backup files                  |
+
+| Volume          | Purpose                   |
+|-----------------|---------------------------|
+| postgres_data   | PostgreSQL database files |
+| minio_data      | Object storage data       |
+| fuseki_data     | Fuseki triplestore        |
+| meili_data      | Meilisearch (local dev)   |
+
 ## Stopping Services
+
 ```bash
-# Stop all services
-docker-compose down
-# Stop and remove volumes (WARNING: deletes all data)
-docker-compose down -v
+docker-compose down        # stop all services
+docker-compose down -v     # stop and remove volumes (WARNING: deletes all data)
 ```
+
 ## Troubleshooting
-### Services fail to start
-Check if ports are already in use:
+
+### Port conflicts (local dev)
 ```bash
-# Check for port conflicts
-lsof -i :5432  # PostgreSQL
-lsof -i :6379  # Redis
-lsof -i :8000  # Backend
+lsof -i :5432   # PostgreSQL
+lsof -i :8000   # Backend
+lsof -i :3030   # Fuseki
+lsof -i :7700   # Meilisearch
 ```
-### Database connection errors
-Ensure PostgreSQL is fully initialized before dependent services start:
+
+### Database not ready
+Wait for `database system is ready to accept connections` in:
 ```bash
 docker-compose logs postgres
-# Wait for "database system is ready to accept connections"
 ```
+
 ### MinIO access denied
-Verify credentials match between `.env` and service configuration:
+Verify credentials match between `.env` and the container:
 ```bash
 docker-compose exec minio mc admin info local
 ```
-### Redis lock issues
-If a provider appears stuck in "busy" state, clear the lock:
-```bash
-docker-compose exec dragonfly redis-cli -a $DRAGONFLY_PASSWORD
-> KEYS pull_manifest:*
-> DEL pull_manifest:{provider_uuid}:*
+
+### Stuck provider lock
+Advisory locks are session-scoped, so connection death releases them automatically. If the backend dies mid-pull, the lock is already gone. If you need to inspect held locks:
+```sql
+SELECT * FROM pg_locks WHERE locktype='advisory';
 ```
+
 ## Security Considerations
-- Change all default passwords in `.env` before deployment
-- The backend CORS configuration in `main.py` should be restricted in production
-- Consider placing services behind a reverse proxy (Caddy, nginx) for TLS termination
-- MinIO console should not be exposed publicly in production
-- API keys for Meilisearch should use read-only keys for search operations
+
+- Change all default passwords in `.env` before deployment.
+- The main app's CORS is restricted to the configured frontend origin; the `/api/v1` sub-app (public key) uses wildcard CORS — do not add other routes there.
+- Place services behind a reverse proxy (Caddy, nginx, Coolify) for TLS termination.
+- Do not expose the MinIO console publicly in production.
+- Use separate read-only Meilisearch keys for frontend search operations; the backend needs a key with index/write permissions.
+
+## Branching
+
+- `main` — production (PR target)
+- `development` — active development
+
 ## Contributing
+
 1. Fork the repository
 2. Create a feature branch (`git checkout -b feature/new-feature`)
-3. Commit changes (`git commit -am 'Add new feature'`)
-4. Push to branch (`git push origin feature/new-feature`)
-5. Open a Pull Request
+3. Commit changes
+4. Push to branch and open a Pull Request against `main`
+
 ## License
+
 Licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE) for details.
