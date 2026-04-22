@@ -15,6 +15,10 @@ The deployment of the pilot version for the project can be found at:
 - Aggregator dashboard: <https://dashboard.app.quality-link.eu/>
 - Course catalogue: <https://courses.app.quality-link.eu/> (repository see [Knowledge-Innovation-Centre/course-catalogue](https://github.com/Knowledge-Innovation-Centre/course-catalogue))
 
+The QualityLink project has been funded by the European Union. Views and opinions expressed are however those of the authors only and do not necessarily reflect those of the European Union or the European Education and Culture Executive Agency (EACEA). Neither the European Union nor EACEA can be held responsible for them.
+
+![Co-founded by the European Union](eu-co-funded.png)
+
 ## Table of Contents
 - [Overview](#overview)
 - [Architecture](#architecture)
