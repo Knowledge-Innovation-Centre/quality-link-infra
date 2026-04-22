@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { providersApi } from '../api'
+import { providersApi, ApiError } from '../api'
 import { API_CONFIG } from '../api/config'
 import type { GetProviderResponse, DatalakeFile } from '../types'
 import Navbar from '@/components/layout/Navbar'
@@ -174,7 +174,7 @@ export default function DashboardPage() {
     }
   }
 
-  const handleExpandDataSource = async (sourceUuid: string, sourcePath: string) => {
+  const handleExpandDataSource = async (sourceUuid: string) => {
     if (!providerData) return
 
     // Check if we already have data for this source
@@ -207,7 +207,6 @@ export default function DashboardPage() {
         provider_uuid: providerData.provider.provider_uuid,
         source_version_uuid: providerData.source_version.source_version_uuid,
         source_uuid: sourceUuid,
-        source_path: sourcePath,
       })
 
       setDatalakeFiles(prev => ({
@@ -215,6 +214,12 @@ export default function DashboardPage() {
         [sourceUuid]: filesResponse.files
       }))
     } catch (error) {
+      // Treat "no data yet" (404) as empty state — render a no-data view instead of toasting
+      if (error instanceof ApiError && error.status === 404) {
+        setDatalakeDates(prev => ({ ...prev, [sourceUuid]: [] }))
+        setDatalakeFiles(prev => ({ ...prev, [sourceUuid]: [] }))
+        return
+      }
       console.error(`Error fetching datalake data for source ${sourceUuid}:`, error)
       showToast({
         type: 'error',
@@ -224,7 +229,7 @@ export default function DashboardPage() {
     }
   }
 
-  const handleDateChange = async (sourceUuid: string, sourcePath: string, date: string) => {
+  const handleDateChange = async (sourceUuid: string, date: string) => {
     if (!providerData) return
 
     try {
@@ -239,7 +244,6 @@ export default function DashboardPage() {
         provider_uuid: providerData.provider.provider_uuid,
         source_version_uuid: providerData.source_version.source_version_uuid,
         source_uuid: sourceUuid,
-        source_path: sourcePath,
       }, date)
 
       setDatalakeFiles(prev => ({
@@ -247,6 +251,11 @@ export default function DashboardPage() {
         [sourceUuid]: filesResponse.files
       }))
     } catch (error) {
+      // Treat "no data for this date" (404) as empty state — silent, no toast
+      if (error instanceof ApiError && error.status === 404) {
+        setDatalakeFiles(prev => ({ ...prev, [sourceUuid]: [] }))
+        return
+      }
       console.error(`Error fetching files for date ${date}:`, error)
       showToast({
         type: 'error',

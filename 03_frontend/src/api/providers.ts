@@ -71,7 +71,7 @@ export class ProvidersApi {
 
   /**
    * Get datalake files for a specific source (v2)
-   * @param params - Provider UUID, source version UUID, source UUID, and source path
+   * @param params - Provider UUID, source version UUID, and source UUID
    * @param date - Optional date in YYYY-MM-DD format
    * @returns Promise with datalake files list including push status
    */
@@ -82,7 +82,6 @@ export class ProvidersApi {
       provider_uuid: params.provider_uuid,
       source_version_uuid: params.source_version_uuid,
       source_uuid: params.source_uuid,
-      source_path: params.source_path,
     };
 
     if (date) {

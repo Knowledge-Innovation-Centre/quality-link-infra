@@ -30,8 +30,8 @@ interface DataSourcesProps {
   onPreviewJson: (filename: string, fullPath?: string) => void
   onDownload: (filename: string, fullPath?: string) => void
   onRefresh?: (sourceId: string) => void
-  onExpand?: (sourceId: string, sourcePath: string) => void
-  onDateChange?: (sourceId: string, sourcePath: string, date: string) => void
+  onExpand?: (sourceId: string) => void
+  onDateChange?: (sourceId: string, date: string) => void
   isRefreshing?: boolean
 }
 
@@ -68,7 +68,7 @@ export default function DataSources({
 
     // Call onExpand when expanding (not collapsing)
     if (!isCurrentlyExpanded && onExpand && sourcePath) {
-      onExpand(id, sourcePath)
+      onExpand(id)
     }
   }
 
@@ -176,6 +176,22 @@ export default function DataSources({
                   <div className="bg-white border border-gray-200 rounded-lg p-4 flex flex-col gap-8">
                     {/* Datalake Section */}
                     <div className="flex flex-col gap-3">
+                      {source.files.length === 0 ? (
+                        <div className="flex flex-col items-center justify-center gap-4 py-12 text-center">
+                          <p className="text-sm text-gray-500">No data available for this source yet.</p>
+                          {onRefresh && source.sourcePath && (
+                            <button
+                              onClick={() => onRefresh(source.id)}
+                              disabled={isRefreshing}
+                              className="bg-brand-base text-white px-3 py-2 rounded-lg text-xs font-medium hover:opacity-90 disabled:opacity-50 flex items-center gap-2 transition-opacity"
+                            >
+                              <RotateCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />
+                              Refetch data source
+                            </button>
+                          )}
+                        </div>
+                      ) : (
+                        <>
                       {/* Date selector and refresh button */}
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-1.5">
@@ -210,7 +226,7 @@ export default function DataSources({
                                         onClick={(e) => {
                                           e.stopPropagation()
                                           if (onDateChange && source.sourcePath) {
-                                            onDateChange(source.id, source.sourcePath, date)
+                                            onDateChange(source.id, date)
                                           }
                                           setOpenDropdownId(null)
                                         }}
@@ -323,6 +339,8 @@ export default function DataSources({
                           </tbody>
                         </table>
                       </div>
+                        </>
+                      )}
 
                     </div>
                   </div>
