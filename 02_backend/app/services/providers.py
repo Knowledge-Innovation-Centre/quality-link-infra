@@ -91,7 +91,7 @@ def get_provider(db: Session, provider_uuid: UUID) -> Dict[str, Any]:
     source_version_result = db.execute(
         text("""
             SELECT source_version_uuid, provider_uuid, version_date, version_id,
-                   source_json, source_uuid_json, created_at, updated_at
+                   created_at, updated_at
             FROM source_version
             WHERE provider_uuid = :provider_uuid
             ORDER BY version_date DESC, version_id DESC
@@ -122,13 +122,10 @@ def get_provider(db: Session, provider_uuid: UUID) -> Dict[str, Any]:
         source_version_uuid = source_version_result[0]
         response["source_version"] = {
             "source_version_uuid": str(source_version_uuid),
-            "provider_uuid": str(source_version_result[1]),
             "version_date": source_version_result[2].isoformat() if source_version_result[2] else None,
             "version_id": source_version_result[3],
-            "source_json": source_version_result[4],
-            "source_uuid_json": source_version_result[5],
-            "created_at": source_version_result[6].isoformat() if source_version_result[6] else None,
-            "updated_at": source_version_result[7].isoformat() if source_version_result[7] else None,
+            "created_at": source_version_result[4].isoformat() if source_version_result[4] else None,
+            "updated_at": source_version_result[5].isoformat() if source_version_result[5] else None,
         }
 
         sources_result = db.execute(
@@ -145,7 +142,6 @@ def get_provider(db: Session, provider_uuid: UUID) -> Dict[str, Any]:
         for source in sources_result:
             response["sources"].append({
                 "source_uuid": str(source[0]),
-                "source_version_uuid": str(source[1]),
                 "source_name": source[7],
                 "source_path": source[2],
                 "source_type": source[3],
