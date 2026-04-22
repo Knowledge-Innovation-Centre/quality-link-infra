@@ -1,6 +1,4 @@
-import json
 import logging
-from datetime import datetime, timezone
 from io import BytesIO
 from typing import Any, Dict, Optional
 from uuid import UUID
@@ -42,15 +40,17 @@ def fetch_bronze(
     provider_uuid: UUID,
     source_version_uuid: UUID,
     source_uuid: UUID,
+    file_path_stem: str,
 ) -> Optional[Dict[str, Any]]:
     """Fetch source data from the provider, write to MinIO, return metadata.
 
+    The caller supplies `file_path_stem` — the MinIO object key without
+    extension — so the orchestrator can co-locate related artefacts (e.g. the
+    run log) under a shared timestamped name. Bronze just appends the
+    extension inferred from the response content-type.
+
     Returns None on any failure (logged).
     """
-    now = datetime.now(timezone.utc)
-    date_str = now.strftime("%Y-%m-%d")
-    datetime_str = now.strftime("%Y%m%d_%H%M%S")
-
     if not minio_client.bucket_exists(MINIO_BUCKET_NAME):
         minio_client.make_bucket(MINIO_BUCKET_NAME)
         logger.info("Created MinIO bucket %s", MINIO_BUCKET_NAME)
@@ -96,35 +96,9 @@ def fetch_bronze(
         return None
 
     file_extension, file_format = _content_type_to_format(content_type or "")
-
-    base_folder = f"datalake/courses/{provider_uuid}/{source_version_uuid}/{source_uuid}"
-    manifest_path = f"{base_folder}/source_manifest.json"
-    file_path = f"{base_folder}/{date_str}/{datetime_str}{file_extension}"
-
-    manifest_data = {"dates": [date_str], "latest_date": date_str}
-    try:
-        response = minio_client.get_object(MINIO_BUCKET_NAME, manifest_path)
-        try:
-            existing = json.loads(response.read().decode("utf-8"))
-        finally:
-            response.close()
-            response.release_conn()
-        if existing.get("latest_date") != date_str:
-            if date_str not in existing.get("dates", []):
-                existing.setdefault("dates", []).append(date_str)
-            existing["latest_date"] = date_str
-        manifest_data = existing
-    except S3Error as e:
-        if e.code != "NoSuchKey":
-            logger.warning("Manifest read failed for %s: %s", manifest_path, e)
+    file_path = f"{file_path_stem}{file_extension}"
 
     try:
-        manifest_bytes = json.dumps(manifest_data, indent=4).encode("utf-8")
-        minio_client.put_object(
-            MINIO_BUCKET_NAME, manifest_path,
-            BytesIO(manifest_bytes), length=len(manifest_bytes),
-            content_type="application/json",
-        )
         minio_client.put_object(
             MINIO_BUCKET_NAME, file_path,
             BytesIO(file_bytes), length=len(file_bytes),
@@ -144,5 +118,4 @@ def fetch_bronze(
         "file_path": file_path,
         "file_format": file_format,
         "content_type": content_type,
-        "date": date_str,
     }

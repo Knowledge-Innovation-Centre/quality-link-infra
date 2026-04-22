@@ -183,10 +183,12 @@ S3-compatible data lake. Raw source snapshots are organised as:
     └── {provider_uuid}/
         └── {source_version_uuid}/
             └── {source_uuid}/
-                ├── source_manifest.json
                 └── {YYYY-MM-DD}/
-                    └── {raw files}
+                    ├── {timestamp}.{ext}        # raw source snapshot
+                    └── {timestamp}_log.txt      # run log for that snapshot
 ```
+
+Per-run metadata (status, bronze file path, log file path, error message, …) lives in the `transaction` table; the data-lake layout no longer duplicates a `source_manifest.json`.
 
 ### Apache Jena Fuseki
 Triplestore with TDB2 backend, using three named graphs:

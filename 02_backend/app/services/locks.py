@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 
 # Namespace constants. Stable integers — do not renumber once deployed.
 NS_PULL_MANIFEST = 1
+NS_COURSE_FETCH = 2
 
 
 def try_acquire(db: Session, namespace: int, key: str) -> bool:

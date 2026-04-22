@@ -7,7 +7,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from services.course_fetch import run_course_fetch
-from services.locks import NS_PULL_MANIFEST, is_locked
+from services.locks import NS_COURSE_FETCH, NS_PULL_MANIFEST, is_locked
 
 
 def queue_provider_data(
@@ -34,6 +34,14 @@ def queue_provider_data(
             "status": "busy",
             "message": "Manifest is currently being pulled for this provider. Please try again later.",
             "provider_uuid": str(provider_uuid),
+        }
+
+    if is_locked(db, NS_COURSE_FETCH, str(source_uuid)):
+        return {
+            "status": "busy",
+            "message": "This source is already being fetched. Please try again later.",
+            "provider_uuid": str(provider_uuid),
+            "source_uuid": str(source_uuid),
         }
 
     requested_version = db.execute(
