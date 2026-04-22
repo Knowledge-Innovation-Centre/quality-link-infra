@@ -127,13 +127,6 @@ export interface ManifestMethod {
   path: string | null
 }
 
-export interface SourceJson {
-  path: string
-  type: string
-  version: string
-  source_uuid?: string
-}
-
 export interface ProviderDetails {
   provider_uuid: string
   deqar_id: string
@@ -150,24 +143,22 @@ export interface ProviderDetails {
 
 export interface SourceVersion {
   source_version_uuid: string
-  provider_uuid: string
   version_date: string
   version_id: number
-  source_json: SourceJson[]
-  source_uuid_json: SourceJson[]
   created_at: string
   updated_at: string
 }
 
 export interface Source {
   source_uuid: string
-  source_version_uuid: string
   source_path: string
   source_name?: string
   source_type: string
   source_version: string
   created_at: string
   updated_at: string
+  last_file_pushed_date?: string | null
+  source_id?: string | null
 }
 
 export interface GetProviderResponse {
@@ -182,6 +173,8 @@ export interface DatalakeFile {
   size: number
   last_modified: string
   push_status: boolean
+  status?: string
+  log_file_path?: string | null
 }
 
 export interface GetDatalakeFilesParams {

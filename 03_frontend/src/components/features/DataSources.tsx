@@ -1,4 +1,4 @@
-import { File, Eye, ChevronDown, HelpCircle, RotateCw, Download } from 'lucide-react'
+import { File, Eye, ChevronDown, RotateCw, Download, FileText } from 'lucide-react'
 import { useState, useRef, useEffect } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 
@@ -8,17 +8,18 @@ interface DataFile {
   isPushed?: boolean
   pushDate?: string
   fullPath?: string
+  status?: string
+  logFilePath?: string | null
 }
 
 interface DataSource {
   id: string
+  sourceId?: string | null
   name: string
   source_name?: string
   type: string
   pushed: string
-  latestFile: string
   files: DataFile[]
-  latestPushedFile?: DataFile
   sourcePath?: string
   availableDates?: string[]
   selectedDate?: string | null
@@ -106,24 +107,23 @@ export default function DataSources({
 
       {/* Data Sources Table */}
       <div className="flex flex-col gap-4">
-        <div className="border border-gray-200 rounded-lg overflow-hidden">
+        <div className="border border-gray-200 rounded-lg overflow-x-auto">
+          <div className="min-w-[560px]">
           {/* Table Header */}
           <div className="flex bg-gray-50 w-full">
-            <div className="px-4 py-4 w-[12%]">
+            <div className="px-4 py-4 w-[22%]">
               <p className="text-xs font-semibold text-gray-500 uppercase">ID</p>
             </div>
-            <div className="px-4 py-4 w-[15%]">
+            <div className="px-4 py-4 w-[34%]">
               <p className="text-xs font-semibold text-gray-500 uppercase">Name</p>
             </div>
-            <div className="px-4 py-4 w-[10%]">
+            <div className="px-4 py-4 w-[14%]">
               <p className="text-xs font-semibold text-gray-500 uppercase">Type</p>
             </div>
-            <div className="px-4 py-4 w-[12%]">
+            <div className="px-4 py-4 w-[22%]">
               <p className="text-xs font-semibold text-gray-500 uppercase">PUSHED</p>
             </div>
-            <div className="px-4 py-4 w-[51%]">
-              <p className="text-xs font-semibold text-gray-500 uppercase">latest pushed file</p>
-            </div>
+            <div className="px-4 py-4 w-[8%]" />
           </div>
 
           {/* Table Body */}
@@ -131,27 +131,23 @@ export default function DataSources({
             <div key={source.id}>
               {/* Main Row */}
               <div className={`flex items-center border-t border-gray-200 w-full ${isExpanded(source.id) ? 'bg-gray-50' : 'bg-white'}`}>
-                <div className="px-4 py-4 w-[12%]">
-                  <p className="text-sm text-gray-900" title={source.id}>
-                    {truncateUuid(source.id)}
+                <div className="px-4 py-4 w-[22%]">
+                  <p className="text-sm text-gray-900 truncate" title={source.sourceId || source.id}>
+                    {source.sourceId || truncateUuid(source.id)}
                   </p>
                 </div>
-                <div className="px-4 py-4 w-[15%]">
-                  <p className="text-sm text-gray-900">{source.source_name}</p>
+                <div className="px-4 py-4 w-[34%]">
+                  <p className="text-sm text-gray-900 truncate">{source.source_name}</p>
                 </div>
-                <div className="px-4 py-4 w-[10%]">
+                <div className="px-4 py-4 w-[14%]">
                   <div className="bg-gray-100 px-2.5 py-0.5 rounded-md inline-block">
                     <p className="text-sm font-semibold text-gray-800">{source.type}</p>
                   </div>
                 </div>
-                <div className="px-4 py-4 w-[12%]">
+                <div className="px-4 py-4 w-[22%]">
                   <p className="text-sm text-gray-900">{source.pushed}</p>
                 </div>
-                <div className="px-4 py-4 w-[51%] flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <File className="w-4 h-4 text-gray-500" />
-                    <p className="text-sm font-medium text-gray-900">{source.latestFile}</p>
-                  </div>
+                <div className="px-4 py-4 w-[8%] flex justify-end">
                   <button
                     onClick={() => toggleExpand(source.id, source.sourcePath)}
                     className="p-0.5 hover:bg-gray-200 rounded transition-colors"
@@ -244,17 +240,17 @@ export default function DataSources({
                       </div>
 
                       {/* Files Table */}
-                      <div className="rounded-lg overflow-hidden border border-gray-200">
-                        <table className="w-full table-fixed">
+                      <div className="rounded-lg border border-gray-200 overflow-x-auto">
+                        <table className="w-full table-fixed min-w-[640px]">
                           <thead>
                             <tr className="bg-white">
-                              <th className="text-left px-4 py-4 text-xs font-semibold text-gray-500 uppercase border-b border-gray-200 w-[50%]">
+                              <th className="text-left px-4 py-4 text-xs font-semibold text-gray-500 uppercase border-b border-gray-200 w-[40%]">
                                 FILE
                               </th>
-                              <th className="text-left px-4 py-4 text-xs font-semibold text-gray-500 uppercase border-b border-gray-200 w-[25%]">
+                              <th className="text-left px-4 py-4 text-xs font-semibold text-gray-500 uppercase border-b border-gray-200 w-[20%]">
                                 FETCHED
                               </th>
-                              <th className="text-center px-4 py-4 text-xs font-semibold text-gray-500 uppercase border-b border-gray-200 w-[25%]">
+                              <th className="text-center px-4 py-4 text-xs font-semibold text-gray-500 uppercase border-b border-gray-200 w-[40%]">
                                 ACTIONS
                               </th>
                             </tr>
@@ -268,16 +264,24 @@ export default function DataSources({
                                   className={`${isHighlighted ? 'bg-[#f2f7fb] border-brand-base' : 'bg-white'} ${fileIndex < source.files.length - 1 ? 'border-b border-gray-200' : ''}`}
                                 >
                                   <td className={`px-4 py-4 ${isHighlighted ? 'border-l-2 border-brand-base' : ''}`}>
-                                    <div className="flex items-center gap-4">
-                                      <div className="flex items-center gap-2">
-                                        <File className={`w-4 h-4 ${isHighlighted ? 'text-brand-base' : 'text-gray-500'}`} />
-                                        <span className="text-sm font-medium text-gray-900">{file.filename}</span>
+                                    <div className="flex items-center gap-4 flex-wrap">
+                                      <div className="flex items-center gap-2 min-w-0">
+                                        <File className={`w-4 h-4 flex-shrink-0 ${isHighlighted ? 'text-brand-base' : 'text-gray-500'}`} />
+                                        <span className="text-sm font-medium text-gray-900 truncate">{file.filename}</span>
                                       </div>
-                                      {file.isPushed && file.pushDate && (
+                                      {file.isPushed ? (
                                         <div className="bg-brand-base text-white px-2.5 py-0.5 rounded-md text-xs font-medium">
-                                          This file will be pushed tonight at 2 AM
+                                          Latest pushed
                                         </div>
-                                      )}
+                                      ) : file.status === 'running' ? (
+                                        <div className="bg-yellow-100 text-yellow-800 px-2.5 py-0.5 rounded-md text-xs font-medium">
+                                          Being processed
+                                        </div>
+                                      ) : file.status && file.status !== 'success' ? (
+                                        <div className="bg-red-100 text-red-800 px-2.5 py-0.5 rounded-md text-xs font-medium">
+                                          {file.status.charAt(0).toUpperCase() + file.status.slice(1)}
+                                        </div>
+                                      ) : null}
                                     </div>
                                   </td>
                                   <td className="px-4 py-4">
@@ -285,19 +289,31 @@ export default function DataSources({
                                   </td>
                                   <td className={`px-4 py-4 ${isHighlighted ? 'border-r-2 border-brand-base' : ''}`}>
                                     <div className="flex justify-center gap-2">
+                                      {file.logFilePath && (
+                                        <button
+                                          onClick={() => onPreviewJson(file.logFilePath!.split('/').pop() || 'log.txt', file.logFilePath!)}
+                                          className="bg-white border border-gray-200 text-gray-900 px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-gray-50 flex items-center gap-2 transition-colors"
+                                          title="Log"
+                                        >
+                                          <FileText className="w-3.5 h-3.5" />
+                                          <span className="hidden md:inline">Log</span>
+                                        </button>
+                                      )}
                                       <button
                                         onClick={() => onPreviewJson(file.filename, file.fullPath)}
                                         className="bg-white border border-gray-200 text-gray-900 px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-gray-50 flex items-center gap-2 transition-colors"
+                                        title="Preview"
                                       >
                                         <Eye className="w-3.5 h-3.5" />
-                                        Preview
+                                        <span className="hidden md:inline">Preview</span>
                                       </button>
                                       <button
                                         onClick={() => onDownload(file.filename, file.fullPath)}
                                         className="bg-white border border-gray-200 text-gray-900 px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-gray-50 flex items-center gap-2 transition-colors"
+                                        title="Download"
                                       >
                                         <Download className="w-3.5 h-3.5" />
-                                        Download
+                                        <span className="hidden md:inline">Download</span>
                                       </button>
                                     </div>
                                   </td>
@@ -308,56 +324,7 @@ export default function DataSources({
                         </table>
                       </div>
 
-                      {/* Info message */}
-                      <div className="flex items-center gap-2">
-                        <HelpCircle className="w-4.5 h-4.5 text-gray-500 flex-shrink-0" />
-                        <p className="text-sm text-gray-500">
-                          The latest fetched file gets pushed at 2 AM each day. Other files get archived.
-                        </p>
-                      </div>
                     </div>
-
-                    {/* Latest pushed file */}
-                    {source.latestPushedFile && (
-                      <div className="flex flex-col gap-2">
-                        <h3 className="text-sm text-gray-900">Latest pushed file</h3>
-                        <div className="border border-gray-200 rounded-lg overflow-hidden">
-                          <table className="w-full table-fixed">
-                            <tbody>
-                              <tr className="bg-white">
-                                <td className="px-4 py-4 w-[40%]">
-                                  <div className="flex items-center gap-2">
-                                    <File className="w-4 h-4 text-brand-base" />
-                                    <span className="text-sm font-medium text-gray-900">{source.latestPushedFile.filename}</span>
-                                  </div>
-                                </td>
-                                <td className="px-4 py-4 w-[30%]">
-                                  <span className="text-sm text-gray-900">{source.latestPushedFile.timestamp}</span>
-                                </td>
-                                <td className="px-4 py-4 w-[30%]">
-                                  <div className="flex justify-end gap-2">
-                                    <button
-                                      onClick={() => onPreviewJson(source.latestPushedFile!.filename, source.latestPushedFile!.fullPath)}
-                                      className="bg-white border border-gray-200 text-gray-900 px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-gray-50 flex items-center gap-2 transition-colors"
-                                    >
-                                      <Eye className="w-3.5 h-3.5" />
-                                      Preview
-                                    </button>
-                                    <button
-                                      onClick={() => onDownload(source.latestPushedFile!.filename, source.latestPushedFile!.fullPath)}
-                                      className="bg-white border border-gray-200 text-gray-900 px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-gray-50 flex items-center gap-2 transition-colors"
-                                    >
-                                      <Download className="w-3.5 h-3.5" />
-                                      Download
-                                    </button>
-                                  </div>
-                                </td>
-                              </tr>
-                            </tbody>
-                          </table>
-                        </div>
-                      </div>
-                    )}
                   </div>
                 </div>
                   </motion.div>
@@ -365,6 +332,7 @@ export default function DataSources({
               </AnimatePresence>
             </div>
           ))}
+          </div>
         </div>
       </div>
     </section>
