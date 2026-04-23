@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 QL = Namespace("http://data.quality-link.eu/ontology/v1#")
 ELM = Namespace("http://data.europa.eu/snb/model/elm/")
 
+DEFAULT_TYPE = URIRef("http://data.europa.eu/snb/learning-opportunity/05053c1cbe")
 
 def _has_type(graph: Graph, subject, *types) -> bool:
     return any((subject, RDF.type, t) in graph for t in types)
@@ -109,9 +110,14 @@ def _enrich_rdf_graph(
                 graph.add((loi, ELM.providedBy, URIRef(provider_uri)))
 
         for los_uri in los_subjects:
+            # set default values
             if (los_uri, QL.isActive, None) not in graph:
                 graph.add((los_uri, QL.isActive, Literal(True)))
 
+            if (los_uri, DCTERMS.type, None) not in graph:
+                graph.add((los_uri, DCTERMS.type, DEFAULT_TYPE))
+
+            # convert ECTS credits to xsd:double
             if (los_uri, ELM.creditPoint, None) in graph:
                 for creditPoint in graph.objects(los_uri, ELM.creditPoint):
                     for point in graph.objects(creditPoint, ELM.point):

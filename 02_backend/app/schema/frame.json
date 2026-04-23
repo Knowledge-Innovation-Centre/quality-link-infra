@@ -80,6 +80,10 @@
         "@explicit": true,
         "skos:prefLabel": {}
     },
+    "dcterms:type": {
+        "@explicit": true,
+        "skos:prefLabel": {}
+    },
     "dcterms:publisher": {
         "@explicit": true,
         "skos:prefLabel": {},

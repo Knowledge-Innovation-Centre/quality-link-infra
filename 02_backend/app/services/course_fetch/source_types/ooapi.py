@@ -97,6 +97,7 @@ class OoapiDataSource(DataSourceType):
         course_uuid = str(uuid.uuid5(uuid.NAMESPACE_URL, str(course_uri)))
 
         graph.add((course_uri, RDF.type, QL.LearningOpportunitySpecification))
+        graph.add((course_uri, DCTERMS.type, self.COURSE_TYPE))
         graph.add((URIRef(f"urn:uuid:{course_uuid}"), OWL.sameAs, course_uri))
 
         if course.get("primaryCode") and isinstance(course["primaryCode"], dict):

@@ -1,6 +1,7 @@
 from typing import Dict
 
 import requests
+from rdflib import URIRef
 
 
 class DataSourceType:
@@ -18,6 +19,9 @@ class DataSourceType:
         "application/json",
         "application/ld+json",
     )
+
+    COURSE_TYPE = URIRef("http://data.europa.eu/snb/learning-opportunity/05053c1cbe")
+    PROGRAMME_TYPE = URIRef("http://data.europa.eu/snb/learning-opportunity/79343569f3")
 
     def __init__(self, source: Dict):
         self.source = source

@@ -5,7 +5,7 @@ from uuid import UUID
 
 from fastapi import HTTPException, status
 from pyld import jsonld
-from rdflib.namespace import OWL, RDF
+from rdflib.namespace import OWL, RDF, SKOS
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -20,6 +20,7 @@ from services import fuseki
 DCTERMS_NS = "http://purl.org/dc/terms/"
 RDF_NS = str(RDF)
 OWL_NS = str(OWL)
+SKOS_NS = str(SKOS)
 
 QL_NS = "http://data.quality-link.eu/ontology/v1#"
 ELM_NS = "http://data.europa.eu/snb/model/elm/"
@@ -167,19 +168,22 @@ WHERE {{
 PREFIX rdf: <{RDF_NS}>
 PREFIX owl: <{OWL_NS}>
 PREFIX dcterms: <{DCTERMS_NS}>
+PREFIX skos: <{SKOS_NS}>
 PREFIX ql:  <{QL_NS}>
 PREFIX elm: <{ELM_NS}>
 
-SELECT ?course_uuid ?los (SAMPLE(?t) AS ?type) (SAMPLE(?anyTitle) AS ?title)
+SELECT ?course_uuid ?los (SAMPLE(?typeLabel) AS ?type) (SAMPLE(?anyTitle) AS ?title)
 FROM <{GRAPH_COURSES}>
+FROM <{GRAPH_VOCABULARY}>
 WHERE {{
-  VALUES ?t {{ ql:LearningOpportunitySpecification elm:Qualification elm:LearningAchievementSpecification }}
-  ?los rdf:type ?t ;
+  VALUES ?class {{ ql:LearningOpportunitySpecification elm:Qualification elm:LearningAchievementSpecification }}
+  ?los rdf:type ?class ;
        dcterms:publisher <{provider_uri}> .
   ?uuid_node owl:sameAs ?los .
   FILTER(STRSTARTS(STR(?uuid_node), "urn:uuid:"))
   BIND(STRAFTER(STR(?uuid_node), "urn:uuid:") AS ?course_uuid)
   OPTIONAL {{ ?los dcterms:title ?anyTitle . }}
+  OPTIONAL {{ ?los dcterms:type ?typeConcept . ?typeConcept skos:prefLabel ?typeLabel . }}
 }}
 GROUP BY ?course_uuid ?los
 ORDER BY ?course_uuid
