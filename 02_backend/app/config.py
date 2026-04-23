@@ -1,5 +1,6 @@
 import os
 from dotenv import load_dotenv
+from pathlib import Path
 
 load_dotenv()
 
@@ -41,3 +42,4 @@ DEFAULT_VOCABULARIES = [
     "http://data.europa.eu/snb/learning-opportunity/25831c2",       # Learning opportunity type
 ]
 
+SCHEMA_DIR = Path(os.getenv("SCHEMA_DIR", Path(__file__).resolve().parent / "schema"))

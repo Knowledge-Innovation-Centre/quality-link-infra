@@ -99,6 +99,8 @@ The Typer CLI is the preferred way to drive provider operations manually (runnin
 cd 02_backend && source venv/bin/activate
 cd app  # the CLI imports top-level modules (config, database, services/...)
 
+python cli.py course frame <URI|UUID>                     # get framed JSON-LD for a single course
+python cli.py course list  <UUID|ETER_ID|DEQAR_ID> [--limit N] [--offset N]  # list courses from Fuseki
 python cli.py provider list [SEARCH] [--with-data] [--page N] [--page-size N]
 python cli.py provider manifest <UUID|ETER_ID|DEQAR_ID>   # DNS + .well-known discovery
 python cli.py provider sources  <UUID|ETER_ID|DEQAR_ID>   # show probes + latest version's sources

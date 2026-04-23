@@ -100,7 +100,7 @@ def upload_turtle(
     session: Optional[requests.Session] = None,
     timeout: int = 60,
 ) -> bool:
-    """POST Turtle to the /data endpoint, replacing the named graph contents."""
+    """POST Turtle to the /data endpoint, adding to the named graph contents."""
     http = session or requests
     response = http.post(
         _data_url(),
@@ -120,7 +120,7 @@ def upload_turtle(
 
 
 def sparql_select(query: str, *, session: Optional[requests.Session] = None, timeout: int = 30) -> list:
-    """Run a SELECT query and return the bindings list (empty on error)."""
+    """Run a SPARQL SELECT query and return the bindings list (empty on error)."""
     http = session or requests
     try:
         response = http.get(
@@ -132,14 +132,14 @@ def sparql_select(query: str, *, session: Optional[requests.Session] = None, tim
         response.raise_for_status()
         return response.json()["results"]["bindings"]
     except Exception as e:
-        logger.warning("SPARQL SELECT failed: %s", e)
+        logger.warning("SPARQL query failed: %s", e)
         return []
 
 
 def sparql_construct_jsonld(
     query: str, *, session: Optional[requests.Session] = None, timeout: int = 60
 ) -> Optional[dict]:
-    """Run a CONSTRUCT query and return the JSON-LD body (None on error/empty)."""
+    """Run a SPARQL query and return the JSON-LD body (None on error/empty)."""
     http = session or requests
     try:
         response = http.get(
@@ -151,5 +151,24 @@ def sparql_construct_jsonld(
         response.raise_for_status()
         return response.json()
     except Exception as e:
-        logger.warning("SPARQL CONSTRUCT failed: %s", e)
+        logger.warning("SPARQL query failed: %s", e)
+        return None
+
+
+def sparql_construct_nt(
+    query: str, *, session: Optional[requests.Session] = None, timeout: int = 60
+) -> Optional[dict]:
+    """Run a SPARQL query and return as N-Triples (None on error/empty)."""
+    http = session or requests
+    try:
+        response = http.get(
+            query_url(),
+            params={"query": query, "format": "application/n-triples"},
+            auth=fuseki_auth(),
+            timeout=timeout,
+        )
+        response.raise_for_status()
+        return response.text
+    except Exception as e:
+        logger.warning("SPARQL query failed: %s", e)
         return None

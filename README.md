@@ -245,13 +245,27 @@ Wildcard CORS — any provider domain can fetch the active signing key.
 
 The Typer CLI is the preferred way to drive provider operations manually (runs in-process, so no HTTP/BackgroundTask round-trip).
 
+### Vocabularies
+
 ```bash
 docker-compose run --rm backend python cli.py vocabulary fetch                           # fetch DEFAULT_VOCABULARIES from EU controlled vocabularies
+```
+
+### Providers
+
+```bash
 docker-compose run --rm backend python cli.py provider refresh				 # pull registry from DEQAR
 docker-compose run --rm backend python cli.py provider list [SEARCH] [--with-data]       # list/search providers
 docker-compose run --rm backend python cli.py provider manifest <UUID|ETER_ID|DEQAR_ID>  # run DNS + .well-known manifest discovery
 docker-compose run --rm backend python cli.py provider sources  <UUID|ETER_ID|DEQAR_ID>  # show manifest and latest version's sources
 docker-compose run --rm backend python cli.py provider fetch    <UUID|ETER_ID|DEQAR_ID>  # trigger data source ftech (bronze→silver→gold)
+```
+
+### Courses
+
+```bash
+python cli.py course list  <UUID|ETER_ID|DEQAR_ID>                                       # list courses from Fuseki
+python cli.py course frame <URI|UUID>                                                    # get framed JSON-LD for a single course
 ```
 
 Provider identifiers accept a UUID, ETER id, or DEQAR id — they're resolved via `services.providers.resolve_provider_uuid`.
