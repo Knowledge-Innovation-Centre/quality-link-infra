@@ -25,7 +25,8 @@ Meilisearch is expected to run externally in production; add it via `docker-comp
 The backend is modular, not a single-file app. Layout:
 
 - `main.py` — FastAPI app factory. Mounts `routers/` and a separate public sub-app at `/api/v1` with wildcard CORS for the `credentials` router (so provider domains can fetch the QL public key).
-- `cli.py` — Typer CLI entry point. Groups: `provider` (list / manifest / sources / fetch / refresh) and `vocabulary` (fetch).
+- `cli.py` — Typer CLI entry point; assembles the groups defined under `cli/` (`provider`, `vocabulary`, `course`).
+- `cli/` — per-group command modules: `providers.py` (list / manifest / sources / fetch / refresh), `vocabulary.py` (fetch), `courses.py` (list / frame).
 - `config.py` — env-var loading (DB, MinIO, Fuseki, Meilisearch, DEQAR, default vocabularies, graph IRIs).
 - `database.py` — SQLAlchemy engine + `SessionLocal`. Use `get_db` (FastAPI dep) in routers; open `SessionLocal()` directly in CLI commands and background tasks.
 - `routers/` — HTTP adapters only; delegate to services.

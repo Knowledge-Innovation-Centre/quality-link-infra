@@ -79,7 +79,8 @@ quality-link-infra/
 ├── 02_backend/             # FastAPI app + Typer admin CLI
 │   ├── app/
 │   │   ├── main.py         # App factory, mounts routers + /api/v1 sub-app
-│   │   ├── cli.py          # Command-line interface
+│   │   ├── cli.py          # Typer entry point; assembles groups from cli/
+│   │   ├── cli/            # Per-group command modules (provider, vocabulary, course)
 │   │   ├── config.py
 │   │   ├── database.py
 │   │   ├── dependencies.py
