@@ -138,7 +138,7 @@ class OoapiDataSource(DataSourceType):
         if isinstance(study_load, dict) and study_load.get("value"):
             if study_load.get("studyLoadUnit", "ects") == "ects":
                 ects = BNode()
-                graph.add((ects, ELM.point, Literal(study_load["value"], datatype=XSD.decimal)))
+                graph.add((ects, ELM.point, Literal(study_load["value"], datatype=XSD.double)))
                 graph.add((ects, ELM.framework, URIRef("http://data.europa.eu/snb/education-credit/6fcec5c5af")))
                 graph.add((course_uri, ELM.creditPoint, ects))
             else:

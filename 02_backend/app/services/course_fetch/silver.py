@@ -112,6 +112,20 @@ def _enrich_rdf_graph(
             if (los_uri, QL.isActive, None) not in graph:
                 graph.add((los_uri, QL.isActive, Literal(True)))
 
+            if (los_uri, ELM.creditPoint, None) in graph:
+                for creditPoint in graph.objects(los_uri, ELM.creditPoint):
+                    for point in graph.objects(creditPoint, ELM.point):
+                        if isinstance(point, Literal):
+                            if point.datatype != XSD.double:
+                                graph.remove((creditPoint, ELM.point, point))
+                                try:
+                                    newpoint = Literal(float(point), datatype=XSD.double)
+                                    graph.add((creditPoint, ELM.point, newpoint))
+                                except ValueError:
+                                    logger.warning(f"{los_uri} has an invalid credit point value: {point}")
+                        else:
+                            logger.warning(f"{los_uri} has a credit point value that is not a Literal, cannot convert.")
+
             if same_as_map:
                 for pub in list(graph.objects(los_uri, DCTERMS.publisher)):
                     if isinstance(pub, URIRef) and str(pub) in same_as_map:
