@@ -276,19 +276,21 @@ def providers_list_courses(
     table = Table(
         title=f"Courses — {total} total (showing {start}–{end})"
     )
-    table.add_column("Course UUID", no_wrap=True)
+    table.add_column("URI")
     table.add_column("Type")
     table.add_column("Title")
-    table.add_column("URI")
+    table.add_column("Instances")
+    table.add_column("Course UUID", no_wrap=True)
     for c in courses:
         title = c["title"] or ""
         if title and c.get("title_lang"):
             title = f"{title} [dim]({c['title_lang']})[/dim]"
         table.add_row(
-            c["course_uuid"] or "-",
+            c["uri"] or "-",
             c["type"] or "-",
             title or "[dim]—[/dim]",
-            c["uri"] or "-",
+            c["instances"] or "-",
+            c["course_uuid"] or "-",
         )
     console.print(table)
 

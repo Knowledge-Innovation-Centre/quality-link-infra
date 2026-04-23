@@ -132,25 +132,29 @@ def _enrich_rdf_graph(
                         else:
                             logger.warning(f"{los_uri} has a credit point value that is not a Literal, cannot convert.")
 
+            # resolve provider aliases to canonical URI
             if same_as_map:
                 for pub in list(graph.objects(los_uri, DCTERMS.publisher)):
                     if isinstance(pub, URIRef) and str(pub) in same_as_map:
                         graph.remove((los_uri, DCTERMS.publisher, pub))
                         graph.add((los_uri, DCTERMS.publisher, URIRef(same_as_map[str(pub)])))
 
-            if (los_uri, DCTERMS.publisher, None) in graph:
-                continue
+            # infer publisher from instances if unset
+            if (los_uri, DCTERMS.publisher, None) not in graph:
+                loi_providers = set()
+                for loi in graph.subjects(ELM.learningAchievementSpecification, los_uri):
+                    for p in graph.objects(loi, ELM.providedBy):
+                        loi_providers.add(p)
+                if loi_providers:
+                    for p in loi_providers:
+                        canonical = URIRef(same_as_map[str(p)]) if same_as_map and str(p) in same_as_map else p
+                        graph.add((los_uri, DCTERMS.publisher, canonical))
+                elif provider_uri:
+                    graph.add((los_uri, DCTERMS.publisher, URIRef(provider_uri)))
 
-            loi_providers = set()
+            # create statements from LOS -> LOI
             for loi in graph.subjects(ELM.learningAchievementSpecification, los_uri):
-                for p in graph.objects(loi, ELM.providedBy):
-                    loi_providers.add(p)
-            if loi_providers:
-                for p in loi_providers:
-                    canonical = URIRef(same_as_map[str(p)]) if same_as_map and str(p) in same_as_map else p
-                    graph.add((los_uri, DCTERMS.publisher, canonical))
-            elif provider_uri:
-                graph.add((los_uri, DCTERMS.publisher, URIRef(provider_uri)))
+                graph.add((los_uri, ELM.learningOpportunity, loi))
 
         logger.info(
             "Enriched: %s LOS, %s LOI, %s course_uuids, %s triples",

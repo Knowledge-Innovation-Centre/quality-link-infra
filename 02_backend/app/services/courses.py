@@ -172,7 +172,7 @@ PREFIX skos: <{SKOS_NS}>
 PREFIX ql:  <{QL_NS}>
 PREFIX elm: <{ELM_NS}>
 
-SELECT ?course_uuid ?los (SAMPLE(?typeLabel) AS ?type) (SAMPLE(?anyTitle) AS ?title)
+SELECT ?course_uuid ?los (SAMPLE(?typeLabel) AS ?type) (SAMPLE(?anyTitle) AS ?title) (COUNT(?loi) AS ?instances)
 FROM <{GRAPH_COURSES}>
 FROM <{GRAPH_VOCABULARY}>
 WHERE {{
@@ -184,6 +184,7 @@ WHERE {{
   BIND(STRAFTER(STR(?uuid_node), "urn:uuid:") AS ?course_uuid)
   OPTIONAL {{ ?los dcterms:title ?anyTitle . }}
   OPTIONAL {{ ?los dcterms:type ?typeConcept . ?typeConcept skos:prefLabel ?typeLabel . }}
+  OPTIONAL {{ ?los elm:learningOpportunity ?loi . }}
 }}
 GROUP BY ?course_uuid ?los
 ORDER BY ?course_uuid
@@ -199,6 +200,7 @@ LIMIT {int(limit)} OFFSET {int(offset)}
         courses.append({
             "course_uuid": b.get("course_uuid", {}).get("value"),
             "uri": b.get("los", {}).get("value"),
+            "instances": b.get("instances", {}).get("value"),
             "type": type_label,
             "type_uri": type_iri or None,
             "title": title_binding.get("value"),
