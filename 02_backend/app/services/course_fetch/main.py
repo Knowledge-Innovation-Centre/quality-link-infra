@@ -30,19 +30,25 @@ def _capture_logs() -> Iterator[io.StringIO]:
     emitted records in a StringIO buffer for the duration of the block.
 
     Child loggers (bronze, silver, gold, source_types.*) propagate up, so
-    one handler on the parent captures everything.
+    one handler on the parent captures everything. The parent's level is
+    forced to INFO for the duration — otherwise CLI runs (which never call
+    logging.basicConfig) inherit the root WARNING level and drop INFO records
+    before they ever reach the handler.
     """
     buf = io.StringIO()
     handler = logging.StreamHandler(buf)
     handler.setFormatter(_LOG_FORMATTER)
     handler.setLevel(logging.DEBUG)
     parent = logging.getLogger("services.course_fetch")
+    previous_level = parent.level
+    parent.setLevel(logging.INFO)
     parent.addHandler(handler)
     try:
         yield buf
     finally:
         handler.flush()
         parent.removeHandler(handler)
+        parent.setLevel(previous_level)
 
 
 def _upload_log(minio_client: Minio, object_key: str, content: str) -> None:
