@@ -85,10 +85,23 @@
         "skos:prefLabel": {}
     },
     "dcterms:publisher": {
+        "@embed": "@always",
         "@explicit": true,
         "skos:prefLabel": {},
         "regorg:legalName": {},
-        "foaf:homepage": {},
+        "foaf:homepage": {
+            "@embed": "@always"
+        },
         "elm:location": {}
+    },
+    "elm:learningOpportunity": {
+        "elm:providedBy": {
+            "@embed": "@always",
+            "@explicit": true,
+            "skos:prefLabel": {},
+            "foaf:homepage": {
+                "@embed": "@always"
+            }
+        }
     }
 }
