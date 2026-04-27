@@ -26,7 +26,7 @@ The backend is modular, not a single-file app. Layout:
 
 - `main.py` — FastAPI app factory. Mounts `routers/` and a separate public sub-app at `/api/v1` with wildcard CORS for the `credentials` router (so provider domains can fetch the QL public key).
 - `cli.py` — Typer CLI entry point; assembles the groups defined under `cli/` (`provider`, `vocabulary`, `course`).
-- `cli/` — per-group command modules: `providers.py` (list / manifest / sources / fetch / refresh), `vocabulary.py` (fetch), `courses.py` (list / frame).
+- `cli/` — per-group command modules: `providers.py` (list / manifest / sources / refresh), `vocabulary.py` (fetch), `courses.py` (list / frame / fetch / silver / reindex — the course-pipeline ops).
 - `config.py` — env-var loading (DB, MinIO, Fuseki, Meilisearch, DEQAR, default vocabularies, graph IRIs).
 - `database.py` — SQLAlchemy engine + `SessionLocal`. Use `get_db` (FastAPI dep) in routers; open `SessionLocal()` directly in CLI commands and background tasks.
 - `routers/` — HTTP adapters only; delegate to services.
@@ -100,12 +100,14 @@ The Typer CLI is the preferred way to drive provider operations manually (runnin
 cd 02_backend && source venv/bin/activate
 cd app  # the CLI imports top-level modules (config, database, services/...)
 
-python cli.py course frame <URI|UUID>                     # get framed JSON-LD for a single course
-python cli.py course list  <UUID|ETER_ID|DEQAR_ID> [--limit N] [--offset N]  # list courses from Fuseki
-python cli.py provider list [SEARCH] [--with-data] [--page N] [--page-size N]
+python cli.py course list     <UUID|ETER_ID|DEQAR_ID> [--limit N] [--offset N]  # list courses from Fuseki
+python cli.py course frame    <URI|UUID>                  # get framed JSON-LD for a single course
+python cli.py course fetch    <UUID|ETER_ID|DEQAR_ID> [--source SOURCE_UUID]    # bronze→silver→gold
+python cli.py course silver   [<UUID|ETER_ID|DEQAR_ID>] [--source SOURCE_UUID] [--all]  # re-run silver from latest bronze
+python cli.py course reindex  [<URI|UUID>] [--provider <UUID|ETER_ID|DEQAR_ID>] [--all]  # re-run gold / Meilisearch
+python cli.py provider list   [SEARCH] [--with-data] [--page N] [--page-size N]
 python cli.py provider manifest <UUID|ETER_ID|DEQAR_ID>   # DNS + .well-known discovery
 python cli.py provider sources  <UUID|ETER_ID|DEQAR_ID>   # show probes + latest version's sources
-python cli.py provider fetch    <UUID|ETER_ID|DEQAR_ID> [--source SOURCE_UUID]  # bronze→silver→gold
 python cli.py provider refresh  [--limit N] [--offset N]  # pull registry from DEQAR
 python cli.py vocabulary fetch  [SCHEME_URI ...]          # defaults to DEFAULT_VOCABULARIES
 ```

@@ -63,8 +63,9 @@ def _enrich_rdf_graph(
     file_content: bytes, file_format: str,
     provider_uuid: str, provider_uri: Optional[str],
     same_as_map: Dict[str, str],
-) -> Tuple[List[str], Optional[Graph]]:
-    """Parse, enrich in place, return (course_uuids, graph)."""
+) -> Tuple[List[Dict[str, str]], Optional[Graph]]:
+    """Parse, enrich in place, return (courses, graph) where each course is a
+    {"uuid": str, "uri": str} dict."""
     import uuid as uuid_lib
 
     try:
@@ -78,7 +79,7 @@ def _enrich_rdf_graph(
         now = datetime.now(timezone.utc)
         today = now.date()
 
-        course_uuids: set[str] = set()
+        courses: Dict[str, str] = {}
         owl_same_as: list[tuple] = []
         loi_subjects: list[URIRef] = []
         los_subjects: list[URIRef] = []
@@ -97,7 +98,7 @@ def _enrich_rdf_graph(
                 course_uuid = str(uuid_lib.uuid5(uuid_lib.UUID(provider_uuid), str(subject)))
                 owl_same_as.append((URIRef(f"urn:uuid:{course_uuid}"), OWL.sameAs, subject))
                 los_subjects.append(subject)
-                course_uuids.add(course_uuid)
+                courses[course_uuid] = str(subject)
 
             elif _has_type(graph, subject, QL.LearningOpportunityInstance, ELM.LearningOpportunity):
                 loi_subjects.append(subject)
@@ -157,10 +158,10 @@ def _enrich_rdf_graph(
                 graph.add((los_uri, ELM.learningOpportunity, loi))
 
         logger.info(
-            "Enriched: %s LOS, %s LOI, %s course_uuids, %s triples",
-            len(los_subjects), len(loi_subjects), len(course_uuids), len(graph),
+            "Enriched: %s LOS, %s LOI, %s courses, %s triples",
+            len(los_subjects), len(loi_subjects), len(courses), len(graph),
         )
-        return list(course_uuids), graph
+        return [{"uuid": u, "uri": uri} for u, uri in courses.items()], graph
 
     except Exception as e:
         logger.exception("RDF enrichment failed: %s", e)
@@ -172,15 +173,14 @@ def enrich_silver(
     minio_client: Minio,
     session: requests.Session,
     message: Dict[str, Any],
-) -> Optional[Dict[str, Any]]:
+) -> Optional[List[Dict[str, str]]]:
     """Download bronze file, enrich, push each subject to Fuseki, update source row.
 
-    Returns {provider_uuid, source_version_uuid, source_type, course_uuids} or None.
+    Returns a list of {"uuid", "uri"} dicts for the courses produced, or None
+    on failure.
     """
     provider_uuid = message["provider_uuid"]
-    source_version_uuid = message["source_version_uuid"]
     source_uuid = message["source_uuid"]
-    source_type = message.get("source_type", "unknown")
     file_path = message["file_path"]
     file_format = message.get("file_format", "turtle")
 
@@ -206,7 +206,7 @@ def enrich_silver(
     same_as_map = _fetch_same_as_map(session)
     logger.info("Loaded %s owl:sameAs mappings", len(same_as_map))
 
-    course_uuids, enriched_graph = _enrich_rdf_graph(
+    courses, enriched_graph = _enrich_rdf_graph(
         file_content, file_format, provider_uuid, provider_uri, same_as_map
     )
     if enriched_graph is None:
@@ -238,9 +238,4 @@ def enrich_silver(
     )
     db.commit()
 
-    return {
-        "provider_uuid": provider_uuid,
-        "source_version_uuid": source_version_uuid,
-        "source_type": source_type,
-        "course_uuids": course_uuids,
-    }
+    return courses

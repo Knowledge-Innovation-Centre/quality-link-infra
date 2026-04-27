@@ -1,4 +1,4 @@
-from typing import List, Optional, Annotated
+from typing import Optional
 from uuid import UUID
 
 import typer
@@ -6,10 +6,8 @@ from fastapi import HTTPException
 from rich.console import Console
 from rich.table import Table
 
-from config import DEFAULT_VOCABULARIES, DEQAR_API_URL
+from config import DEQAR_API_URL
 from database import SessionLocal
-from services.course_fetch.main import run_course_fetch
-from services.datalake import queue_provider_data
 from services.deqar import (
     fetch_deqar_providers,
     providers_to_rdf,
@@ -22,7 +20,6 @@ from services.providers import (
     list_providers,
     resolve_provider_uuid,
 )
-from services.vocabulary import refresh_vocabulary
 
 
 providers_app = typer.Typer(help="Provider and data source operations", no_args_is_help=True)
@@ -219,76 +216,6 @@ def providers_list_sources(
             pushed[:16].replace("T", " ") if pushed else "-",
         )
     console.print(table)
-
-
-@providers_app.command("fetch")
-def providers_fetch(
-    provider: str = typer.Argument(..., help="Provider UUID, ETER id, or DEQAR id"),
-    source_uuid: Optional[UUID] = typer.Option(
-        None,
-        "--source", "-s",
-        help="Fetch a single source; default fetches every source of the latest version",
-    ),
-) -> None:
-    """Fetch provider data in-process (bronze → silver → gold)."""
-    with SessionLocal() as db:
-        provider_uuid = _resolve(db, provider)
-        try:
-            result = get_provider(db, provider_uuid)
-        except HTTPException as e:
-            _die(str(e.detail))
-
-        version = result.get("source_version")
-        sources = result.get("sources") or []
-        if not version:
-            _die(f"No source version found for {provider_uuid}")
-
-        version_uuid = UUID(version["source_version_uuid"])
-
-        if source_uuid is not None:
-            sources = [s for s in sources if UUID(s["source_uuid"]) == source_uuid]
-            if not sources:
-                _die(f"Source {source_uuid} does not belong to the latest version")
-
-        if not sources:
-            _die("No sources attached to the latest version")
-
-        validated = []
-        for s in sources:
-            try:
-                # Validate only — do not schedule a BackgroundTask from the CLI.
-                check = queue_provider_data(
-                    db,
-                    provider_uuid,
-                    version_uuid,
-                    UUID(s["source_uuid"]),
-                )
-            except HTTPException as e:
-                console.print(
-                    f"[red]{s.get('source_name') or s['source_uuid']}: {e.detail}[/red]"
-                )
-                continue
-
-            label = s.get("source_name") or s["source_uuid"]
-            status_ = check.get("status")
-            if status_ == "success":
-                validated.append((s, label))
-            elif status_ == "busy":
-                console.print(f"[yellow]busy[/yellow] {label}: {check.get('message')}")
-            elif status_ == "outdated":
-                console.print(f"[yellow]outdated[/yellow] {label}: {check.get('message')}")
-            else:
-                console.print(f"[red]{label}: {check}[/red]")
-
-    fetched = 0
-    for s, label in validated:
-        console.print(f"[cyan]fetching[/cyan] {label} ({s['source_uuid']})...")
-        run_course_fetch(
-            provider_uuid, version_uuid, UUID(s["source_uuid"])
-        )
-        fetched += 1
-
-    console.print(f"\nFetched {fetched}/{len(sources)} source(s).")
 
 
 @providers_app.command("refresh")

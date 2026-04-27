@@ -34,6 +34,92 @@ def _content_type_to_format(content_type: str) -> tuple[str, Optional[str]]:
     return "", None
 
 
+def _format_from_path(path: str) -> Optional[str]:
+    """Infer rdflib parse format from a bronze file's extension."""
+    lower = path.lower()
+    if lower.endswith(".ttl"):
+        return "turtle"
+    if lower.endswith(".xml"):
+        return "xml"
+    if lower.endswith(".json") or lower.endswith(".jsonld"):
+        return "json-ld"
+    return None
+
+
+def latest_bronze_for_source(db: Session, source_uuid: UUID) -> Optional[Dict[str, Any]]:
+    """Find the most recent completed bronze file for a source via the
+    transaction ledger, and build a silver-input message enriched with the
+    `source_version_uuid` (which the orchestrator needs to start a new
+    transaction row).
+
+    Returns None if no bronze exists for this source.
+    """
+    row = db.execute(
+        text("""
+            SELECT provider_uuid, source_version_uuid, source_uuid, bronze_file_path
+            FROM transaction
+            WHERE source_uuid = :source_uuid
+              AND bronze_file_path IS NOT NULL
+            ORDER BY created_at_date DESC, run_number DESC
+            LIMIT 1
+        """),
+        {"source_uuid": str(source_uuid)},
+    ).fetchone()
+    if not row:
+        return None
+
+    file_path = row[3]
+    return {
+        "provider_uuid": str(row[0]),
+        "source_version_uuid": str(row[1]),
+        "source_uuid": str(row[2]),
+        "file_path": file_path,
+        "file_format": _format_from_path(file_path),
+    }
+
+
+def list_sources_with_bronze(
+    db: Session,
+    provider_uuid: Optional[UUID] = None,
+) -> list[Dict[str, Any]]:
+    """Enumerate sources that have at least one bronze file in the ledger.
+
+    Picks the single most-recent transaction row per source (so the
+    returned `source_version_uuid` points at the version that produced the
+    latest bronze). Optionally filters by provider.
+    """
+    params: Dict[str, Any] = {}
+    where = ["t.bronze_file_path IS NOT NULL"]
+    if provider_uuid is not None:
+        where.append("t.provider_uuid = :provider_uuid")
+        params["provider_uuid"] = str(provider_uuid)
+    where_sql = " AND ".join(where)
+
+    rows = db.execute(
+        text(f"""
+            SELECT DISTINCT ON (t.source_uuid)
+                   t.source_uuid, t.provider_uuid, t.source_version_uuid,
+                   s.source_name, s.source_type
+            FROM transaction t
+            JOIN source s ON s.source_uuid = t.source_uuid
+            WHERE {where_sql}
+            ORDER BY t.source_uuid, t.created_at_date DESC, t.run_number DESC
+        """),
+        params,
+    ).fetchall()
+
+    return [
+        {
+            "source_uuid": str(r[0]),
+            "provider_uuid": str(r[1]),
+            "source_version_uuid": str(r[2]),
+            "source_name": r[3],
+            "source_type": r[4],
+        }
+        for r in rows
+    ]
+
+
 def fetch_bronze(
     db: Session,
     minio_client: Minio,
@@ -112,10 +198,7 @@ def fetch_bronze(
 
     return {
         "provider_uuid": str(provider_uuid),
-        "source_version_uuid": str(source_version_uuid),
         "source_uuid": str(source_uuid),
-        "source_type": source["type"],
         "file_path": file_path,
         "file_format": file_format,
-        "content_type": content_type,
     }
