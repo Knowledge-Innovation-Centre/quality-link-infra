@@ -61,7 +61,25 @@ class OoapiDataSource(DataSourceType):
             logger.info("OOAPI page %s: %s courses", page, len(items))
 
             for course in items:
-                if self.map_course_to_rdf(course, graph):
+                # get list of offerings
+                courseId = course.get("courseId")
+                url_offerings = urljoin(self.source["path"], f"courses/{courseId}/offerings" )
+                offerings = []
+                params_offerings = {}
+                if self.source.get("parameters"):
+                    params_offerings.update(self.source["parameters"])
+                params_offerings["pageSize"] = self.source.get("pageSize", 250)
+                params_offerings["pageNumber"] = 0
+                has_more_offerings = True
+                while has_more_offerings:
+                    params_offerings["pageNumber"] += 1
+                    response_offerings = session.get(url_offerings, params=params_offerings, timeout=60)
+                    response_offerings.raise_for_status()
+                    data_offerings = response_offerings.json()
+                    offerings += data_offerings.get("items", [])
+                    has_more_offerings = data_offerings.get("hasNextPage", False)
+                # convert to RDF
+                if self.map_course_to_rdf(course, graph, offerings):
                     success_count += 1
                 else:
                     failed_count += 1
@@ -86,7 +104,7 @@ class OoapiDataSource(DataSourceType):
             return multilingual_field[0].get("value", "")
         return str(multilingual_field[0])
 
-    def map_course_to_rdf(self, course: Dict, graph: Graph):
+    def map_course_to_rdf(self, course: Dict, graph: Graph, offerings: List):
         courseId = course.get("courseId")
         if not courseId:
             return None
@@ -166,5 +184,38 @@ class OoapiDataSource(DataSourceType):
             graph.add((web, RDF.type, ELM.WebResource))
             graph.add((web, ELM.contentUrl, Literal(course.get("link"))))
             graph.add((course_uri, FOAF.homepage, web))
+
+        for offering in offerings:
+            offeringId = offering.get("offeringId")
+            offering_uri = URIRef(
+                f"{course_uri}/offerings/{offeringId}"
+            )
+            graph.add((offering_uri, RDF.type, QL.LearningOpportunityInstance))
+            graph.add((offering_uri, ELM.learningAchievementSpecification, course_uri))
+
+            if offering.get("name"):
+                title = self.extract_english_value(offering.get("name"))
+                if title:
+                    graph.add((offering_uri, DCTERMS.title, Literal(title, lang="en")))
+            if offering.get("description"):
+                description = self.extract_english_value(offering.get("description"))
+                if description:
+                    graph.add((offering_uri, DCTERMS.description, Literal(description, lang="en")))
+
+            if offering.get("teachingLanguage"):
+                lang_code = offering.get("teachingLanguage")
+                if isinstance(lang_code, str):
+                    graph.add((offering_uri, DCTERMS.language, URIRef(
+                        f"http://publications.europa.eu/resource/authority/language/{lang_code.upper()}"
+                    )))
+
+            if offering.get("startDate") or offering.get("endDate"):
+                temporal = BNode()
+                graph.add((temporal, RDF.type, DCTERMS.PeriodOfTime))
+                if offering.get("startDate"):
+                    graph.add((temporal, ELM.startDate, Literal(offering.get("startDate"), datatype=XSD.date)))
+                if offering.get("endDate"):
+                    graph.add((temporal, ELM.endDate, Literal(offering.get("endDate"), datatype=XSD.date)))
+                graph.add((offering_uri, DCTERMS.temporal, temporal))
 
         return course_uuid
