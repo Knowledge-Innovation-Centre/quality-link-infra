@@ -1,6 +1,6 @@
 import logging
 import uuid
-from typing import Any, Dict
+from typing import Any, Dict, List
 from urllib.parse import urljoin
 
 from rdflib import BNode, Graph, Literal, Namespace, RDF, URIRef
@@ -91,10 +91,8 @@ class OoapiDataSource(DataSourceType):
         if not courseId:
             return None
 
-        course_uri = URIRef(
-            f"http://data.quality-link.eu/providers/{self.source['provider_uuid']}/courses/{courseId}"
-        )
-        course_uuid = str(uuid.uuid5(uuid.NAMESPACE_URL, str(course_uri)))
+        course_uri = self._get_uri(courseId)
+        course_uuid = self._get_uuid(courseId, course_uri)
 
         graph.add((course_uri, RDF.type, QL.LearningOpportunitySpecification))
         graph.add((course_uri, DCTERMS.type, self.COURSE_TYPE))

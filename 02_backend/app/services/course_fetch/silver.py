@@ -2,6 +2,7 @@ import logging
 import os
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
+import uuid
 
 import requests
 from minio import Minio
@@ -22,6 +23,21 @@ DEFAULT_TYPE = URIRef("http://data.europa.eu/snb/learning-opportunity/05053c1cbe
 
 def _has_type(graph: Graph, subject, *types) -> bool:
     return any((subject, RDF.type, t) in graph for t in types)
+
+
+def _is_uuid(uri):
+    """
+    Check if the URI is a urn:uuid one
+    """
+    UUID_PREFIX = "urn:uuid:"
+
+    if str(uri).strip().startswith(UUID_PREFIX):
+        try:
+            return uuid.UUID(str(uri).strip()[len(UUID_PREFIX)])
+        except ValueError:
+            return False
+    else:
+        return False
 
 
 def _collect(src: Graph, dst: Graph, node, visited: set) -> None:
@@ -66,7 +82,6 @@ def _enrich_rdf_graph(
 ) -> Tuple[List[Dict[str, str]], Optional[Graph]]:
     """Parse, enrich in place, return (courses, graph) where each course is a
     {"uuid": str, "uri": str} dict."""
-    import uuid as uuid_lib
 
     try:
         graph = Graph()
@@ -87,18 +102,31 @@ def _enrich_rdf_graph(
         for subject in graph.subjects(unique=True):
             if not isinstance(subject, URIRef):
                 continue
-            graph.add((subject, QL.ingestedDate, Literal(today, datatype=XSD.date)))
-            graph.add((subject, QL.ingestedAt, Literal(now, datatype=XSD.dateTime)))
 
             if _has_type(graph, subject, QL.HigherEducationInstitution, ELM.Organisation):
                 continue
 
             if _has_type(graph, subject, QL.LearningOpportunitySpecification,
                          ELM.Qualification, ELM.LearningAchievementSpecification):
-                course_uuid = str(uuid_lib.uuid5(uuid_lib.UUID(provider_uuid), str(subject)))
-                owl_same_as.append((URIRef(f"urn:uuid:{course_uuid}"), OWL.sameAs, subject))
+
+                graph.add((subject, QL.ingestedDate, Literal(today, datatype=XSD.date)))
+                graph.add((subject, QL.ingestedAt, Literal(now, datatype=XSD.dateTime)))
                 los_subjects.append(subject)
-                courses[course_uuid] = str(subject)
+
+                course_uuid = None
+                if course_uuid := _is_uuid(subject):
+                    # URI is a urn:uuid: one
+                    pass
+                else:
+                    # check if UUID already in graph
+                    for uuid_node in graph.subjects(OWL.sameAs, subject):
+                        if course_uuid := _is_uuid(uuid_node):
+                            break
+                    if not course_uuid:
+                        # generate a UUID if it does not already exist
+                        course_uuid = uuid.uuid5(uuid.NAMESPACE_URL, str(subject))
+                        owl_same_as.append((URIRef(f"urn:uuid:{course_uuid}"), OWL.sameAs, subject))
+                courses[str(course_uuid)] = str(subject)
 
             elif _has_type(graph, subject, QL.LearningOpportunityInstance, ELM.LearningOpportunity):
                 loi_subjects.append(subject)

@@ -91,10 +91,10 @@ WHERE {{
 """
     bindings = fuseki.sparql_select(uuid_query)
 
-    if not bindings:
+    if not bindings or not bindings[0]["uuid"]["value"].startswith("urn:uuid:"):
         raise CourseNotFound("Course UUID not found.")
 
-    return bindings[0]["uuid"]["value"]
+    return bindings[0]["uuid"]["value"][len("urn:uuid:"):]
 
 
 def frame_course(course_uri: str) -> Optional[Dict[str, Any]]:

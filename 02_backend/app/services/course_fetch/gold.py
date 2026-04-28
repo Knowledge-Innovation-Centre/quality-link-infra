@@ -55,6 +55,7 @@ def reindex_course(
         return False
 
     framed.pop("@context", None)
+    framed["uri"] = framed["id"]
     framed["id"] = course_uuid
 
     try:
@@ -82,19 +83,29 @@ WHERE {{
     elm:Qualification
     elm:LearningAchievementSpecification
   }}
-  ?uuid_node owl:sameAs ?los .
-  ?los rdf:type ?t .
-  FILTER(STRSTARTS(STR(?uuid_node), "urn:uuid:"))
+  {{
+    ?uuid_node owl:sameAs ?los .
+    ?los rdf:type ?t .
+    FILTER(STRSTARTS(STR(?uuid_node), "urn:uuid:"))
+  }} UNION {{
+    ?los rdf:type ?t .
+    FILTER(STRSTARTS(STR(?los), "urn:uuid:"))
+  }}
 }}
 """
     bindings = fuseki.sparql_select(query)
     courses: List[Dict[str, str]] = []
     for b in bindings:
-        node = b.get("uuid_node", {}).get("value", "")
         uri = b.get("los", {}).get("value")
-        if not node.startswith("urn:uuid:") or not uri:
+        if not uri:
             continue
-        courses.append({"uuid": node[len("urn:uuid:"):], "uri": uri})
+        if uri.startswith("urn:uuid:"):
+            courses.append({"uuid": uri[len("urn:uuid:"):], "uri": uri})
+        else:
+            uuid_node = b.get("uuid_node", {}).get("value", "")
+            if not uuid_node.startswith("urn:uuid:"):
+                continue
+            courses.append({"uuid": uuid_node[len("urn:uuid:"):], "uri": uri})
     return courses
 
 

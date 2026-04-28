@@ -153,10 +153,22 @@ def fetch_bronze(
         logger.error("Source %s not found in DB", source_uuid)
         return None
 
+    provider = db.execute(
+        text("""
+            SELECT COALESCE(eter_id, deqar_id) AS provider_id
+            FROM provider WHERE provider_uuid = :provider_uuid
+        """),
+        {"provider_uuid": str(provider_uuid)},
+    ).fetchone()
+    if not provider:
+        logger.error("Provider %s not found in DB", provider_uuid)
+        return None
+
     source = {
         "uuid": str(source_uuid),
         "source_version_uuid": str(source_version_uuid),
         "provider_uuid": str(provider_uuid),
+        "provider_id": provider[0],
         "id": row[0],
         "name": row[1],
         "type": row[2],

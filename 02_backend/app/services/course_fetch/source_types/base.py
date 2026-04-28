@@ -1,5 +1,7 @@
 from typing import Dict
 
+import uuid
+
 import requests
 from rdflib import URIRef
 
@@ -40,5 +42,25 @@ class DataSourceType:
             session.headers.update(self._headers)
             return self._do_fetch(session)
 
+
     def _do_fetch(self, session):
         raise NotImplementedError
+
+
+    def _get_uri(self, source_id):
+        """
+        Return a URI composed of provider identifier and unique identifier provided by the source
+        """
+        return URIRef(
+            f"http://data.quality-link.eu/courses/{self.source['provider_id']}/{source_id}"
+        )
+
+
+    def _get_uuid(self, source_id, uri):
+        """
+        If source_id is a valid UUID, return this - otherwise generate UUID from URI
+        """
+        try:
+            return uuid.UUID(source_id)
+        except ValueError:
+            return uuid.uuid5(uuid.NAMESPACE_URL, str(uri))

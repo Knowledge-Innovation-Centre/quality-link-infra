@@ -308,14 +308,10 @@ def courses_reindex(
         except ValueError:
             course_uri = course
             try:
-                uuid_node = resolve_course_uuid(course_uri)
+                course_uuid = resolve_course_uuid(course_uri)
             except CourseNotFound as e:
                 _die(str(e))
-            course_uuid_v = (
-                uuid_node[len("urn:uuid:"):]
-                if uuid_node.startswith("urn:uuid:") else uuid_node
-            )
-            courses = [{"uuid": course_uuid_v, "uri": course_uri}]
+            courses = [{"uuid": course_uuid, "uri": course_uri}]
     elif provider is not None:
         with SessionLocal() as db:
             provider_uuid = _resolve(db, provider)
