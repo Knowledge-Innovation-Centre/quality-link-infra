@@ -58,6 +58,11 @@ def reindex_course(
     framed["uri"] = framed["id"]
     framed["id"] = course_uuid
 
+    if "elm:learningOpportunity" in framed and isinstance(framed["elm:learningOpportunity"], list):
+        count = len(framed["elm:learningOpportunity"])
+        if count > 0:
+            framed["instanceCount"] = len(framed["elm:learningOpportunity"])
+
     try:
         r = session.post(_meili_url(), headers=_meili_headers(), json=framed, timeout=30)
         r.raise_for_status()

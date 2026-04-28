@@ -43,6 +43,9 @@
         "dcterms:language": {
             "@type": "@id"
         },
+        "elm:learningOpportunity": {
+            "@container": "@set"
+        },
         "adms:identifier": {
             "@container": "@set"
         },
