@@ -41,6 +41,7 @@ DEFAULT_VOCABULARIES = [
     "http://data.europa.eu/snb/eqf/25831c2",                        # EQF levels
     "http://data.europa.eu/snb/learning-opportunity/25831c2",       # Learning opportunity type
     "http://data.europa.eu/snb/learning-assessment/25831c2",        # Mode of learning and assessment
+    "http://publications.europa.eu/resource/authority/country",     # Countries and territories
 ]
 
 SCHEMA_DIR = Path(os.getenv("SCHEMA_DIR", Path(__file__).resolve().parent / "schema"))

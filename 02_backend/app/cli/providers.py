@@ -223,6 +223,11 @@ def providers_refresh_from_deqar(
     limit: int = typer.Option(2000, "--limit", min=1, help="Page size"),
     offset: int = typer.Option(0, "--offset", min=0, help="Initial page offset"),
     api_url: str = typer.Option(DEQAR_API_URL, "--api-url", help="DEQAR providers endpoint"),
+    force: bool = typer.Option(
+        False,
+        "--force",
+        help="Re-upload all providers to Fuseki even if DEQAR metadata is unchanged",
+    ),
 ) -> None:
     """
     Refresh provider registry from the DEQAR API and push to the reference graph.
@@ -237,7 +242,7 @@ def providers_refresh_from_deqar(
 
     with SessionLocal() as db:
         with console.status(f"Upserting {len(providers)} providers into Postgres..."):
-            stats = upsert_providers(db, providers)
+            stats = upsert_providers(db, providers, force=force)
 
     with console.status("Serializing providers to RDF..."):
         rdf_list = providers_to_rdf(stats)
@@ -253,6 +258,7 @@ def providers_refresh_from_deqar(
     table.add_row("Updated", str(stats.updated))
     table.add_row("Unchanged", str(stats.unchanged))
     table.add_row("DB errors", str(stats.errors))
+    table.add_row("Force", str(force))
     table.add_row("Fuseki success", str(push_stats.success))
     table.add_row("Fuseki failed", str(push_stats.failed))
     console.print(table)

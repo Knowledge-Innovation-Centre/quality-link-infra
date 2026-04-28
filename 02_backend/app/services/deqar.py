@@ -101,7 +101,9 @@ def _build_name_concat(provider: Dict[str, Any]) -> str:
     return " ".join(parts)
 
 
-def upsert_providers(db: Session, providers: List[Dict[str, Any]]) -> UpsertStats:
+def upsert_providers(
+    db: Session, providers: List[Dict[str, Any]], *, force: bool = False
+) -> UpsertStats:
     stats = UpsertStats()
 
     for provider in providers:
@@ -120,6 +122,8 @@ def upsert_providers(db: Session, providers: List[Dict[str, Any]]) -> UpsertStat
                     stats.updated += 1
                 else:
                     stats.unchanged += 1
+                    if force:
+                        stats.data_updated.append((str(existing[0]), provider))
             else:
                 new_uuid = _insert_provider(db, provider)
                 stats.data_updated.append((str(new_uuid), provider))
@@ -131,8 +135,8 @@ def upsert_providers(db: Session, providers: List[Dict[str, Any]]) -> UpsertStat
             stats.errors += 1
 
     logger.info(
-        "Upsert: total=%s new=%s updated=%s unchanged=%s errors=%s",
-        stats.total, stats.new, stats.updated, stats.unchanged, stats.errors,
+        "Upsert: total=%s new=%s updated=%s unchanged=%s errors=%s force=%s",
+        stats.total, stats.new, stats.updated, stats.unchanged, stats.errors, force,
     )
     return stats
 
@@ -273,6 +277,7 @@ def _deqar_to_rdf(provider_source: Dict[str, Any], provider_uuid: str, graph: Gr
         address = BNode()
         graph.add((hei, ELM.location, location))
         graph.add((location, RDF.type, DCTERMS.Location))
+        graph.add((location, ELM.geographicName, Literal(loc['city'])))
         graph.add((location, ELM.address, address))
         graph.add((address, RDF.type, ELM.Address))
         try:

@@ -5,7 +5,12 @@ from uuid import UUID
 
 from fastapi import HTTPException, status
 from pyld import jsonld
-from rdflib.namespace import OWL, RDF, SKOS
+from rdflib.namespace import (
+    OWL,
+    RDF,
+    RDFS,
+    SKOS,
+)
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -104,8 +109,8 @@ def frame_course(course_uri: str) -> Optional[Dict[str, Any]]:
     failed = 0
 
     construct_query = f"""
-PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
-PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX rdf: <{RDF}>
+PREFIX rdfs: <{RDFS}>
 
 CONSTRUCT {{ ?s ?p ?o . }}
 FROM <{GRAPH_COURSES}>

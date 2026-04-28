@@ -25,10 +25,10 @@
         "dcterms:modified": {
             "@type": "http://www.w3.org/2001/XMLSchema#dateTime"
         },
-        "ql:ingestedAt": {
+        "ingestedAt": {
             "@type": "http://www.w3.org/2001/XMLSchema#dateTime"
         },
-        "ql:ingestedDate": {
+        "ingestedDate": {
             "@type": "http://www.w3.org/2001/XMLSchema#date"
         },
         "elm:schemeId": {
@@ -46,11 +46,8 @@
         "adms:identifier": {
             "@container": "@set"
         },
-        "ql:isActive": {
-            "@type": "http://www.w3.org/2001/XMLSchema#boolean"
-        },
-        "has_instances": {
-            "@reverse": "http://data.europa.eu/snb/model/elm/learningAchievementSpecification"
+        "elm:location": {
+            "@container": "@set"
         }
     },
     "@type": [
@@ -93,7 +90,22 @@
         "foaf:homepage": {
             "@embed": "@always"
         },
-        "elm:location": {}
+        "adms:identifier": {},
+        "elm:location": {
+            "elm:geographicName": {},
+            "elm:address": {
+                "elm:countryCode": {
+                    "@embed": "@always",
+                    "@explicit": true,
+                    "skos:prefLabel": {}
+                }
+            }
+        },
+        "isMemberOf": {
+            "@explicit": true,
+            "skos:prefLabel": {},
+            "adms:identifier": {}
+        }
     },
     "elm:learningOpportunity": {
         "dcterms:language": {
@@ -104,10 +116,7 @@
         "elm:providedBy": {
             "@embed": "@always",
             "@explicit": true,
-            "skos:prefLabel": {},
-            "foaf:homepage": {
-                "@embed": "@always"
-            }
+            "skos:prefLabel": {}
         }
     }
 }
