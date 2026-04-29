@@ -3,6 +3,8 @@ from typing import Optional, Tuple
 
 import requests
 
+from rdflib.namespace import OWL
+
 from config import (
     FUSEKI_DATASET_NAME,
     FUSEKI_PASSWORD,
@@ -36,6 +38,8 @@ def replace_subject_in_graph(
     subject_uri: str,
     triples_nt: str,
     *,
+    alias_uri: Optional[str] = None,
+    alias_replace: Optional[bool] = False,
     session: Optional[requests.Session] = None,
     timeout: int = 60,
 ) -> bool:
@@ -44,12 +48,29 @@ def replace_subject_in_graph(
 
     Returns True on success.
     """
-    sparql = f"""WITH <{graph_uri}>
+
+    if alias_uri and alias_uri != subject_uri:
+        alias_nt = f"<{alias_uri}> owl:sameAs <{subject_uri}> ."
+    else:
+        alias_nt = ""
+
+    if alias_replace:
+        alias_delete = "?alias owl:sameAs ?root ."
+        alias_where = "OPTIONAL { ?alias owl:sameAs ?root . }"
+    else:
+        alias_delete = ""
+        alias_where = ""
+
+    sparql = f"""
+PREFIX owl: <{OWL}>
+
+WITH <{graph_uri}>
 DELETE {{
   ?root ?p0 ?o0 .
   ?bn1 ?p1 ?o1 .
   ?bn2 ?p2 ?o2 .
   ?bn3 ?p3 ?o3 .
+  {alias_delete}
 }}
 WHERE {{
   VALUES ?root {{ <{subject_uri}> }}
@@ -69,10 +90,12 @@ WHERE {{
       }}
     }}
   }}
+  {alias_where}
 }} ;
 INSERT DATA {{
   GRAPH <{graph_uri}> {{
     {triples_nt}
+    {alias_nt}
   }}
 }}
 """

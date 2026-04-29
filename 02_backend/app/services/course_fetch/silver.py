@@ -22,6 +22,9 @@ ELM = Namespace("http://data.europa.eu/snb/model/elm/")
 DEFAULT_TYPE = URIRef("http://data.europa.eu/snb/learning-opportunity/05053c1cbe")
 
 def _has_type(graph: Graph, subject, *types) -> bool:
+    """
+    Checks if subject has any of a given list of RDF types (classes)
+    """
     return any((subject, RDF.type, t) in graph for t in types)
 
 
@@ -33,7 +36,7 @@ def _is_uuid(uri):
 
     if str(uri).strip().startswith(UUID_PREFIX):
         try:
-            return uuid.UUID(str(uri).strip()[len(UUID_PREFIX)])
+            return uuid.UUID(str(uri).strip()[len(UUID_PREFIX):])
         except ValueError:
             return False
     else:
@@ -41,16 +44,23 @@ def _is_uuid(uri):
 
 
 def _collect(src: Graph, dst: Graph, node, visited: set) -> None:
+    """
+    Recursively collect all statements starting from node,
+    avoiding loops by tracking visited nodes
+    """
     if node in visited:
         return
     visited.add(node)
     for p, o in src.predicate_objects(node):
         dst.add((node, p, o))
-        if isinstance(o, BNode):
+        if isinstance(o, BNode) or isinstance(o, URIRef):
             _collect(src, dst, o, visited)
 
 
 def _extract_subgraph(graph: Graph, root: URIRef) -> Graph:
+    """
+    Extract a sub-graph starting from root
+    """
     sub = Graph()
     _collect(graph, sub, root, set())
     return sub
@@ -58,8 +68,8 @@ def _extract_subgraph(graph: Graph, root: URIRef) -> Graph:
 
 def _fetch_same_as_map(session: requests.Session) -> Dict[str, str]:
     query = f"""
-PREFIX owl: <http://www.w3.org/2002/07/owl#>
-PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+PREFIX owl: <{OWL}>
+PREFIX rdf: <{RDF}>
 PREFIX ql:  <{QL}>
 PREFIX elm: <{ELM}>
 
@@ -99,20 +109,21 @@ def _enrich_rdf_graph(
         loi_subjects: list[URIRef] = []
         los_subjects: list[URIRef] = []
 
+        # first iteration: identify LOS and LOIs in graph, create missing UUIDs
         for subject in graph.subjects(unique=True):
             if not isinstance(subject, URIRef):
-                continue
-
-            if _has_type(graph, subject, QL.HigherEducationInstitution, ELM.Organisation):
                 continue
 
             if _has_type(graph, subject, QL.LearningOpportunitySpecification,
                          ELM.Qualification, ELM.LearningAchievementSpecification):
 
-                graph.add((subject, QL.ingestedDate, Literal(today, datatype=XSD.date)))
-                graph.add((subject, QL.ingestedAt, Literal(now, datatype=XSD.dateTime)))
                 los_subjects.append(subject)
 
+                # add metadata
+                graph.add((subject, QL.ingestedDate, Literal(today, datatype=XSD.date)))
+                graph.add((subject, QL.ingestedAt, Literal(now, datatype=XSD.dateTime)))
+
+                # determined course UUID
                 course_uuid = None
                 if course_uuid := _is_uuid(subject):
                     # URI is a urn:uuid: one
@@ -240,16 +251,12 @@ def enrich_silver(
     if enriched_graph is None:
         return None
 
-    named_uris = [s for s in enriched_graph.subjects(unique=True) if isinstance(s, URIRef)]
     failed = 0
-    for uri in named_uris:
-        subgraph_nt = _extract_subgraph(enriched_graph, uri).serialize(format="nt")
-        ok = fuseki.replace_subject_in_graph(
-            GRAPH_COURSES, str(uri), subgraph_nt, session=session
-        )
-        if not ok:
+    for course in courses:
+        subgraph_nt = _extract_subgraph(enriched_graph, URIRef(course['uri'])).serialize(format="nt")
+        if not fuseki.replace_subject_in_graph(GRAPH_COURSES, course['uri'], subgraph_nt, session=session, alias_uri=f"urn:uuid:{course['uuid']}", alias_replace=True):
             failed += 1
-    logger.info("Pushed %s/%s subjects to Fuseki courses graph", len(named_uris) - failed, len(named_uris))
+    logger.info("Pushed %s/%s LOS subjects to Fuseki courses graph", len(courses) - failed, len(courses))
 
     filename = os.path.basename(file_path)
     now = datetime.now(timezone.utc)
