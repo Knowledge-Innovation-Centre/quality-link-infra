@@ -6,6 +6,8 @@ from urllib.parse import urljoin
 from rdflib import BNode, Graph, Literal, Namespace, RDF, URIRef
 from rdflib.namespace import DCTERMS, FOAF, OWL, SKOS, XSD
 
+import requests
+
 from .base import DataSourceType
 
 logger = logging.getLogger(__name__)
@@ -16,7 +18,7 @@ ADMS = Namespace("http://www.w3.org/ns/adms#")
 
 
 class OoapiDataSource(DataSourceType):
-    """OOAPI (v5) data source."""
+    """OOAPI (v5 and v6) data source."""
 
     LEVEL_MAP = {
         "secondary vocational education 1": URIRef("http://data.europa.eu/snb/eqf/1"),
@@ -29,9 +31,17 @@ class OoapiDataSource(DataSourceType):
         "doctoral": URIRef("http://data.europa.eu/snb/eqf/8"),
     }
 
+    MODE_MAP = {
+        "distance-learning": URIRef("http://data.europa.eu/snb/learning-assessment/920fbb3cbe"), # Online
+        "on campus":         URIRef("http://data.europa.eu/snb/learning-assessment/9191af2ed9"), # Presential
+        "online":            URIRef("http://data.europa.eu/snb/learning-assessment/920fbb3cbe"), # Online
+        "hybrid":            URIRef("http://data.europa.eu/snb/learning-assessment/c_3a90b26d"), # Hybrid
+        "situated":          URIRef("http://data.europa.eu/snb/learning-assessment/9191af2ed9"), # Presential
+    }
+
     def _do_fetch(self, session):
         url = urljoin(self.source["path"], "courses")
-        logger.info("OOAPI request to %s", url)
+        logger.info("OOAPI v%s request to %s", self.source["version"], url)
 
         params = {}
         if self.source.get("parameters"):
@@ -74,10 +84,12 @@ class OoapiDataSource(DataSourceType):
                 while has_more_offerings:
                     params_offerings["pageNumber"] += 1
                     response_offerings = session.get(url_offerings, params=params_offerings, timeout=60)
-                    response_offerings.raise_for_status()
-                    data_offerings = response_offerings.json()
-                    offerings += data_offerings.get("items", [])
-                    has_more_offerings = data_offerings.get("hasNextPage", False)
+                    if response_offerings.status_code == requests.codes.OK:
+                        data_offerings = response_offerings.json()
+                        offerings += data_offerings.get("items", [])
+                        has_more_offerings = data_offerings.get("hasNextPage", False)
+                    else:
+                        has_more_offerings = False
                 # convert to RDF
                 if self.map_course_to_rdf(course, graph, offerings):
                     success_count += 1
@@ -140,16 +152,19 @@ class OoapiDataSource(DataSourceType):
                 graph.add((course_uri, DCTERMS.description, Literal(description, lang="en")))
 
         if course.get("learningOutcomes"):
-            outcomes = [
-                v for outcome in course["learningOutcomes"]
-                if (v := self.extract_english_value(outcome))
-            ]
-            if outcomes:
-                losummary = BNode()
-                graph.add((losummary, RDF.type, ELM.Note))
-                for outcome in outcomes:
-                    graph.add((losummary, ELM.noteLiteral, Literal(outcome, lang="en")))
-                graph.add((course_uri, ELM.learningOutcomeSummary, losummary))
+            for outcome in course["learningOutcomes"]:
+                lo = BNode()
+                graph.add((lo, RDF.type, ELM.LearningOutcome))
+                if self.source['version'] == '6':
+                    graph.add((lo, DCTERMS.title, Literal(self.extract_english_value(outcome.get('name')), lang="en")))
+                    if lo_desc := self.extract_english_value(outcome.get('description')):
+                        lo_note = BNode()
+                        graph.add((lo_note, RDF.type, ELM.Note))
+                        graph.add((lo_note, ELM.noteLiteral, Literal(lo_desc, lang="en")))
+                        graph.add((lo, ELM.additionalNote, lo_note))
+                else:
+                    graph.add((lo, DCTERMS.title, Literal(self.extract_english_value(outcome), lang="en")))
+                graph.add((course_uri, ELM.learningOutcome, lo))
 
         study_load = course.get("studyLoad")
         if isinstance(study_load, dict) and study_load.get("value"):
@@ -170,6 +185,12 @@ class OoapiDataSource(DataSourceType):
                 graph.add((course_uri, DCTERMS.language, URIRef(
                     f"http://publications.europa.eu/resource/authority/language/{lang_code.upper()}"
                 )))
+        elif course.get("languages"):
+            for lang_code in course.get("languages"):
+                if isinstance(lang_code, str):
+                    graph.add((course_uri, DCTERMS.language, URIRef(
+                        f"http://publications.europa.eu/resource/authority/language/{lang_code.upper()}"
+                    )))
 
         if fields := course.get("fieldsOfStudy"):
             if isinstance(fields, list):
@@ -184,6 +205,21 @@ class OoapiDataSource(DataSourceType):
             graph.add((web, RDF.type, ELM.WebResource))
             graph.add((web, ELM.contentUrl, Literal(course.get("link"))))
             graph.add((course_uri, FOAF.homepage, web))
+
+        if course.get("modeOfDelivery"):
+            graph.add((course_uri, ELM.mode, self.MODE_MAP[course["modeOfDelivery"]]))
+        elif course.get("modesOfDelivery"):
+            for mode in course.get("modesOfDelivery"):
+                if mode in self.MODE_MAP:
+                    graph.add((course_uri, ELM.mode, self.MODE_MAP[mode]))
+
+        if course.get("admissionRequirements"):
+            admission = BNode()
+            graph.add((admission, RDF.type, ELM.Note))
+            graph.add((admission, ELM.noteLiteral, Literal(course["admissionRequirements"], lang="en")))
+            graph.add((course_uri, ELM.entryRequirement, admission))
+
+        # Offerings of this course
 
         for offering in offerings:
             offeringId = offering.get("offeringId")
@@ -217,5 +253,17 @@ class OoapiDataSource(DataSourceType):
                 if offering.get("endDate"):
                     graph.add((temporal, ELM.endDate, Literal(offering.get("endDate"), datatype=XSD.date)))
                 graph.add((offering_uri, DCTERMS.temporal, temporal))
+
+            self._value_to_concept(offering, "modeOfDelivery", graph, offering_uri, ELM.mode, self.MODE_MAP)
+
+            self._value_to_literal(offering, "maxNumberStudents",       graph, offering_uri, QL.enrolmentCapacity,      datatype=XSD.nonNegativeInteger)
+            self._value_to_literal(offering, "enrolledNumberStudents",  graph, offering_uri, QL.enrolledLearnerCount,   datatype=XSD.nonNegativeInteger)
+            self._value_to_literal(offering, "minNumberStudents",       graph, offering_uri, QL.enrolmentMinimum,       datatype=XSD.nonNegativeInteger)
+
+            if offering.get("link"):
+                web = BNode()
+                graph.add((web, RDF.type, ELM.WebResource))
+                graph.add((web, ELM.contentUrl, Literal(offering.get("link"))))
+                graph.add((offering_uri, FOAF.homepage, web))
 
         return course_uuid

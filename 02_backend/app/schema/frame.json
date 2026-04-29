@@ -31,6 +31,15 @@
         "ingestedDate": {
             "@type": "http://www.w3.org/2001/XMLSchema#date"
         },
+        "enrolmentCapacity": {
+            "@type": "http://www.w3.org/2001/XMLSchema#nonNegativeInteger"
+        },
+        "enrolledLearnerCount": {
+            "@type": "http://www.w3.org/2001/XMLSchema#nonNegativeInteger"
+        },
+        "enrolmentMinimum": {
+            "@type": "http://www.w3.org/2001/XMLSchema#nonNegativeInteger"
+        },
         "elm:schemeId": {
             "@type": "@id"
         },
@@ -42,6 +51,9 @@
         },
         "dcterms:language": {
             "@type": "@id"
+        },
+        "elm:learningOutcome": {
+            "@container": "@set"
         },
         "elm:learningOpportunity": {
             "@container": "@set"
@@ -110,6 +122,26 @@
             "adms:identifier": {}
         }
     },
+    "elm:isPartOf": {
+        "@embed": "@always",
+        "@explicit": true,
+        "skos:prefLabel": {}
+    },
+    "elm:hasPart": {
+        "@embed": "@always",
+        "@explicit": true,
+        "skos:prefLabel": {}
+    },
+    "elm:generalisationOf": {
+        "@embed": "@always",
+        "@explicit": true,
+        "skos:prefLabel": {}
+    },
+    "elm:specialisationf": {
+        "@embed": "@always",
+        "@explicit": true,
+        "skos:prefLabel": {}
+    },
     "elm:learningOpportunity": {
         "dcterms:language": {
             "@embed": "@always",
@@ -117,6 +149,16 @@
             "skos:prefLabel": {}
         },
         "elm:providedBy": {
+            "@embed": "@always",
+            "@explicit": true,
+            "skos:prefLabel": {}
+        },
+        "elm:isPartOf": {
+            "@embed": "@always",
+            "@explicit": true,
+            "skos:prefLabel": {}
+        },
+        "elm:hasPart": {
             "@embed": "@always",
             "@explicit": true,
             "skos:prefLabel": {}

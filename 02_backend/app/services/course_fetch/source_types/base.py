@@ -3,7 +3,7 @@ from typing import Dict
 import uuid
 
 import requests
-from rdflib import URIRef
+from rdflib import URIRef, Literal
 
 
 class DataSourceType:
@@ -64,3 +64,21 @@ class DataSourceType:
             return uuid.UUID(source_id)
         except ValueError:
             return uuid.uuid5(uuid.NAMESPACE_URL, str(uri))
+
+
+    def _value_to_literal(self, source_dict, key, graph, subject, predicate, datatype = None, lang = None):
+        """
+        Add value to RDF graph as literal, if exists
+        """
+        if source_dict.get(key):
+            graph.add((subject, predicate, Literal(source_dict[key], datatype=datatype, lang=lang)))
+
+
+    def _value_to_concept(self, source_dict, key, graph, subject, predicate, mapping):
+        """
+        Add value to RDF graph based on concept mapping
+        """
+        if source_dict.get(key) and source_dict[key] in mapping:
+            graph.add((subject, predicate, mapping[source_dict[key]]))
+
+

@@ -12,6 +12,8 @@ from config import (
     FUSEKI_USERNAME,
 )
 
+ELM = "http://data.europa.eu/snb/model/elm/"
+
 logger = logging.getLogger(__name__)
 
 
@@ -44,7 +46,9 @@ def replace_subject_in_graph(
     timeout: int = 60,
 ) -> bool:
     """DELETE the subject + up to 3 levels of blank-node descendants in <graph_uri>,
-    then INSERT the provided N-Triples in the same graph, in a single SPARQL Update.
+    plus each elm:learningOpportunity instance the subject points to and its own
+    3 levels of blank-node descendants; then INSERT the provided N-Triples in the
+    same graph, in a single SPARQL Update.
 
     Returns True on success.
     """
@@ -63,6 +67,7 @@ def replace_subject_in_graph(
 
     sparql = f"""
 PREFIX owl: <{OWL}>
+PREFIX elm: <{ELM}>
 
 WITH <{graph_uri}>
 DELETE {{
@@ -70,6 +75,10 @@ DELETE {{
   ?bn1 ?p1 ?o1 .
   ?bn2 ?p2 ?o2 .
   ?bn3 ?p3 ?o3 .
+  ?inst ?ip0 ?io0 .
+  ?ibn1 ?ip1 ?io1 .
+  ?ibn2 ?ip2 ?io2 .
+  ?ibn3 ?ip3 ?io3 .
   {alias_delete}
 }}
 WHERE {{
@@ -87,6 +96,25 @@ WHERE {{
         ?bn2 ?px2 ?bn3 .
         FILTER(isBlank(?bn3))
         ?bn3 ?p3 ?o3 .
+      }}
+    }}
+  }}
+  OPTIONAL {{
+    ?root elm:learningOpportunity ?inst .
+    ?inst ?ip0 ?io0 .
+    OPTIONAL {{
+      ?inst ?ipx0 ?ibn1 .
+      FILTER(isBlank(?ibn1))
+      ?ibn1 ?ip1 ?io1 .
+      OPTIONAL {{
+        ?ibn1 ?ipx1 ?ibn2 .
+        FILTER(isBlank(?ibn2))
+        ?ibn2 ?ip2 ?io2 .
+        OPTIONAL {{
+          ?ibn2 ?ipx2 ?ibn3 .
+          FILTER(isBlank(?ibn3))
+          ?ibn3 ?ip3 ?io3 .
+        }}
       }}
     }}
   }}
