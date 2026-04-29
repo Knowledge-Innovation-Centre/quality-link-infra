@@ -1,14 +1,15 @@
 from typing import Optional, Tuple, List, Dict, Any
 from urllib.parse import urlparse
 from base64 import b64decode
+from uuid import UUID
 
 from fastapi import HTTPException, status
 
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from Crypto.PublicKey import RSA
-from Crypto.Cipher import PKCS1_OAEP
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import padding
 
 import dns.resolver
 import requests
@@ -16,6 +17,62 @@ import yaml
 import json
 import uuid as uuid_lib
 from datetime import date
+
+from services.locks import NS_PULL_MANIFEST, is_locked, release, try_acquire
+
+
+def refresh_manifest_for_provider(
+    db: Session, provider_uuid: UUID
+) -> Dict[str, Any]:
+    """Acquire the per-provider advisory lock, fetch metadata, and run
+    pull_manifest.
+
+    Returns {"status": "busy", ...} when the lock is already held by another
+    session. Raises HTTPException for missing providers or infrastructure
+    errors. Otherwise returns the pull_manifest result dict.
+    """
+    provider_key = str(provider_uuid)
+
+    if not try_acquire(db, NS_PULL_MANIFEST, provider_key):
+        return {
+            "status": "busy",
+            "message": "This provider is currently being processed. Please try again later.",
+            "provider_uuid": provider_key,
+        }
+
+    try:
+        row = db.execute(
+            text("SELECT metadata FROM provider WHERE provider_uuid = :provider_uuid"),
+            {"provider_uuid": provider_uuid},
+        ).fetchone()
+
+        if not row:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Provider not found"
+            )
+
+        return pull_manifest(provider_uuid, row[0], db)
+
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Unexpected error: {e}",
+        )
+    finally:
+        try:
+            release(db, NS_PULL_MANIFEST, provider_key)
+        except Exception:
+            # Lock will be released when the connection ends, so we don't
+            # propagate — but do log so leaks are visible.
+            import logging
+            logging.getLogger(__name__).warning(
+                "Failed to release pull_manifest lock for %s", provider_key,
+                exc_info=True,
+            )
 
 def get_private_key(db: Session) -> Optional[str]:
     result = db.execute(
@@ -25,9 +82,27 @@ def get_private_key(db: Session) -> Optional[str]:
 
 
 def decrypt_auth_value(encrypted_b64: str, private_key_pem: str) -> str:
-    key = RSA.import_key(private_key_pem)
-    cipher = PKCS1_OAEP.new(key)
-    return cipher.decrypt(b64decode(encrypted_b64)).decode("utf-8")
+    # SHA-1/MGF1-SHA-1 matches the pycryptodome PKCS1_OAEP default we previously
+    # used, so existing clients that encrypt against our published public key
+    # continue to work without re-encrypting their secrets.
+    pem = private_key_pem.encode("utf-8") if isinstance(private_key_pem, str) else private_key_pem
+    key = serialization.load_pem_private_key(pem, password=None)
+    plaintext = key.decrypt(
+        b64decode(encrypted_b64),
+        padding.OAEP(
+            mgf=padding.MGF1(algorithm=hashes.SHA1()),
+            algorithm=hashes.SHA1(),
+            label=None,
+        ),
+    )
+    return plaintext.decode("utf-8")
+
+
+def extract_schac(metadata: Dict) -> Optional[str]:
+    for identifier in metadata.get("identifiers", []):
+        if identifier.get("resource") == "SCHAC":
+            return identifier.get("identifier")
+    return None
 
 
 def pull_manifest(provider_uuid: str, metadata: Dict, db: Session) -> Dict[str, Any]:
@@ -35,11 +110,7 @@ def pull_manifest(provider_uuid: str, metadata: Dict, db: Session) -> Dict[str, 
     Pulls a manifest file for the given provider
     """
 
-    identifiers = metadata.get("identifiers", [])
-    schac_identifier = next(
-        (item["identifier"] for item in identifiers if item.get("resource") == "SCHAC"),
-        None,
-    )
+    schac_identifier = extract_schac(metadata)
     website_link = metadata.get("website_link")
 
     if not schac_identifier and not website_link:
@@ -50,40 +121,32 @@ def pull_manifest(provider_uuid: str, metadata: Dict, db: Session) -> Dict[str, 
 
     test_combinations = prepare_test_combinations(schac_identifier, website_link)
 
-    manifest_found = False
     manifest_url = None
     manifest_data = None
 
-    for i, test in enumerate(test_combinations):
-        if test["domain"] is None or manifest_found:
-            test["check"] = None
+    sources_processed = False
+    new_source_version_created = False
+
+    for test in test_combinations:
+        if test["domain"] is None:
             continue
 
-        if test["type"] == "DNS":
-            manifest_path = get_txt_records(test["domain"])
-            if manifest_path:
-                manifest_url, manifest_data = validate_manifest_url(manifest_path)
-                if manifest_url:
-                    manifest_found = True
-                    test["check"] = True
-                    test["path"] = manifest_url
-                    for j in range(i + 1, len(test_combinations)):
-                        test_combinations[j]["check"] = None
-                else:
-                    test["check"] = False
-            else:
-                test["check"] = False
+        test["check"] = False
+        manifest_url = None
+        manifest_data = None
 
+        if test["type"] == "DNS":
+            manifest_url, manifest_data = validate_manifest_url(get_txt_records(test["domain"]))
         elif test["type"] == ".well-known":
             manifest_url, manifest_data = check_well_known(test["domain"])
-            if manifest_url and manifest_data:
-                manifest_found = True
-                test["check"] = True
-                test["path"] = manifest_url
-                for j in range(i + 1, len(test_combinations)):
-                    test_combinations[j]["check"] = None
-            else:
-                test["check"] = False
+
+        if manifest_url:
+            test["path"] = manifest_url
+            if manifest_data:
+                sources_processed, new_source_version_created = process_manifest(provider_uuid, manifest_data, db)
+                if sources_processed:
+                    test["check"] = True
+                    break
 
     db.execute(
         text("""
@@ -95,10 +158,31 @@ def pull_manifest(provider_uuid: str, metadata: Dict, db: Session) -> Dict[str, 
         {"manifest_json": json.dumps(test_combinations), "provider_uuid": str(provider_uuid)},
     )
 
+    db.commit()
+
+    return {
+        "status": "success",
+        "provider_uuid": str(provider_uuid),
+        "schac_domain": schac_identifier,
+        "website_link": website_link,
+        "manifest_url": manifest_url,
+        "manifest_found": sources_processed,
+        "manifest_json": test_combinations,
+        "sources_processed": sources_processed,
+        "new_source_version_created": new_source_version_created,
+    }
+
+
+def process_manifest(provider_uuid: str, manifest_data: Dict, db: Session) -> Tuple[bool, bool]:
+    """
+    Process manifest_data and update DB accordingly
+
+    Return: has a valid list of sources?, new version created?
+    """
     sources_processed = False
     new_source_version_created = False
 
-    if manifest_found and manifest_data and isinstance(manifest_data, dict) and "sources" in manifest_data:
+    if isinstance(manifest_data, dict) and "sources" in manifest_data:
         sources = manifest_data["sources"]
         if sources:
             sources_processed = True
@@ -187,19 +271,8 @@ def pull_manifest(provider_uuid: str, metadata: Dict, db: Session) -> Dict[str, 
 
                 new_source_version_created = True
 
-    db.commit()
+    return sources_processed, new_source_version_created
 
-    return {
-        "status": "success",
-        "provider_uuid": str(provider_uuid),
-        "schac_domain": schac_identifier,
-        "website_link": website_link,
-        "manifest_url": manifest_url,
-        "manifest_found": manifest_found,
-        "manifest_json": test_combinations,
-        "sources_processed": sources_processed,
-        "new_source_version_created": new_source_version_created,
-    }
 
 def get_txt_records(domain: str) -> Optional[str]:
     if not domain:
@@ -228,32 +301,18 @@ def check_well_known(domain: str) -> Tuple[Optional[str], Optional[dict]]:
         "/.well-known/quality-link-manifest.yaml",
     ]
 
-    for path in well_known_paths:
-        full_url = f"{base_url.rstrip('/')}{path}"
-        try:
-            response = requests.get(full_url, timeout=30)
-            if response.status_code == 200:
-                content_type = response.headers.get("content-type", "")
-                if content_type.startswith("application/json") or path.endswith(".json"):
-                    try:
-                        return full_url, response.json()
-                    except Exception:
-                        pass
-                if (
-                    content_type.startswith("application/yaml")
-                    or content_type.startswith("application/x-yaml")
-                    or path.endswith(".yaml")
-                ):
-                    try:
-                        return full_url, yaml.safe_load(response.text)
-                    except Exception:
-                        pass
-                if response.text and len(response.text.strip()) > 0:
-                    return full_url, {"raw_path": True, "content_type": content_type}
-        except Exception:
-            continue
+    invalid_url = None
 
-    return None, None
+    for path in well_known_paths:
+        manifest_url, manifest_data = validate_manifest_url(f"{base_url.rstrip('/')}{path}")
+        if manifest_data is not None:
+            # JSON or YAML data could be parsed
+            return manifest_url, manifest_data
+        elif manifest_url is not None:
+            # last URL returned 200 code but could not be parsed
+            invalid_url = manifest_url
+
+    return invalid_url, None
 
 
 def validate_manifest_url(url: str) -> Tuple[Optional[str], Optional[dict]]:
@@ -266,8 +325,8 @@ def validate_manifest_url(url: str) -> Tuple[Optional[str], Optional[dict]]:
             if content_type.startswith("application/json") or url.endswith(".json"):
                 try:
                     return url, manifest_resp.json()
-                except Exception:
-                    pass
+                except requests.exceptions.JSONDecodeError:
+                    return url, None
             if (
                 content_type.startswith("application/yaml")
                 or content_type.startswith("application/x-yaml")
@@ -276,10 +335,9 @@ def validate_manifest_url(url: str) -> Tuple[Optional[str], Optional[dict]]:
             ):
                 try:
                     return url, yaml.safe_load(manifest_resp.text)
-                except Exception:
-                    pass
-            if manifest_resp.text and len(manifest_resp.text.strip()) > 0:
-                return url, {"raw_path": True, "content_type": content_type}
+                except yaml.YAMLError:
+                    return url, None
+            return url, None
         return None, None
     except Exception:
         return None, None
@@ -290,7 +348,7 @@ def prepare_test_combinations(schac_identifier: Optional[str], website_link: Opt
     test_combinations: List[dict] = []
 
     if schac_identifier:
-        test_combinations.append({"domain": schac_identifier, "type": "DNS", "check": False, "path": None})
+        test_combinations.append({"domain": schac_identifier, "type": "DNS", "check": None, "path": None})
         tested_combinations.add((schac_identifier, "DNS"))
         test_combinations.append({"domain": schac_identifier, "type": ".well-known", "check": None, "path": None})
         tested_combinations.add((schac_identifier, ".well-known"))
@@ -322,22 +380,3 @@ def prepare_test_combinations(schac_identifier: Optional[str], website_link: Opt
     return test_combinations
 
 
-def safe_release_lock(redis_client, lock_key: str, lock_uuid: str) -> bool:
-    lua_script = """
-    if redis.call("get", KEYS[1]) == ARGV[1] then
-        return redis.call("del", KEYS[1])
-    else
-        return 0
-    end
-    """
-    try:
-        result = redis_client.eval(lua_script, 1, lock_key, lock_uuid)
-        if result == 1:
-            print(f"Lock released: {lock_key}")
-            return True
-        else:
-            print(f"Lock not owned or already expired: {lock_key}")
-            return False
-    except Exception as e:
-        print(f"Error releasing lock: {e}")
-        return False

@@ -1,0 +1,167 @@
+{
+    "@context": {
+        "@vocab": "http://data.quality-link.eu/ontology/v1#",
+        "id": "@id",
+        "type": "@type",
+        "ql": "http://data.quality-link.eu/ontology/v1#",
+        "elm": "http://data.europa.eu/snb/model/elm/",
+        "dcterms": "http://purl.org/dc/terms/",
+        "adms": "http://www.w3.org/ns/adms#",
+        "skos": "http://www.w3.org/2004/02/skos/core#",
+        "regorg": "http://www.w3.org/ns/regorg#",
+        "foaf": "http://xmlns.com/foaf/0.1/",
+        "dcterms:title": {
+            "@language": "en"
+        },
+        "dcterms:description": {
+            "@language": "en"
+        },
+        "skos:prefLabel": {
+            "@language": "en"
+        },
+        "elm:noteLiteral": {
+            "@language": "en"
+        },
+        "dcterms:modified": {
+            "@type": "http://www.w3.org/2001/XMLSchema#dateTime"
+        },
+        "ingestedAt": {
+            "@type": "http://www.w3.org/2001/XMLSchema#dateTime"
+        },
+        "ingestedDate": {
+            "@type": "http://www.w3.org/2001/XMLSchema#date"
+        },
+        "enrolmentCapacity": {
+            "@type": "http://www.w3.org/2001/XMLSchema#nonNegativeInteger"
+        },
+        "enrolledLearnerCount": {
+            "@type": "http://www.w3.org/2001/XMLSchema#nonNegativeInteger"
+        },
+        "enrolmentMinimum": {
+            "@type": "http://www.w3.org/2001/XMLSchema#nonNegativeInteger"
+        },
+        "elm:schemeId": {
+            "@type": "@id"
+        },
+        "elm:EQFLevel": {
+            "@type": "@id"
+        },
+        "elm:ISCEDFCode": {
+            "@type": "@id"
+        },
+        "dcterms:language": {
+            "@type": "@id"
+        },
+        "elm:learningOutcome": {
+            "@container": "@set"
+        },
+        "elm:learningOpportunity": {
+            "@container": "@set"
+        },
+        "adms:identifier": {
+            "@container": "@set"
+        },
+        "elm:location": {
+            "@container": "@set"
+        }
+    },
+    "@type": [
+        "ql:LearningOpportunitySpecification",
+        "elm:Qualification",
+        "elm:LearningAchievementSpecification"
+    ],
+    "elm:learningOutcome": {
+        "@explicit": true,
+        "dcterms:title": {},
+        "elm:additionalNote": {},
+        "elm:relatedESCOSkill": {}
+    },
+    "elm:learningOutcomeSummary": {
+        "@explicit": true,
+        "elm:noteLiteral": {}
+    },
+    "elm:EQFLevel": {
+        "@explicit": true,
+        "skos:prefLabel": {}
+    },
+    "elm:ISCEDFCode": {
+        "@explicit": true,
+        "skos:prefLabel": {}
+    },
+    "dcterms:language": {
+        "@embed": "@always",
+        "@explicit": true,
+        "skos:prefLabel": {}
+    },
+    "dcterms:type": {
+        "@explicit": true,
+        "skos:prefLabel": {}
+    },
+    "dcterms:publisher": {
+        "@embed": "@always",
+        "@explicit": true,
+        "skos:prefLabel": {},
+        "regorg:legalName": {},
+        "foaf:homepage": {
+            "@embed": "@always"
+        },
+        "adms:identifier": {},
+        "elm:location": {
+            "elm:geographicName": {},
+            "elm:address": {
+                "elm:countryCode": {
+                    "@embed": "@always",
+                    "@explicit": true,
+                    "skos:prefLabel": {}
+                }
+            }
+        },
+        "isMemberOf": {
+            "@explicit": true,
+            "skos:prefLabel": {},
+            "adms:identifier": {}
+        }
+    },
+    "elm:isPartOf": {
+        "@embed": "@always",
+        "@explicit": true,
+        "skos:prefLabel": {}
+    },
+    "elm:hasPart": {
+        "@embed": "@always",
+        "@explicit": true,
+        "skos:prefLabel": {}
+    },
+    "elm:generalisationOf": {
+        "@embed": "@always",
+        "@explicit": true,
+        "skos:prefLabel": {}
+    },
+    "elm:specialisationf": {
+        "@embed": "@always",
+        "@explicit": true,
+        "skos:prefLabel": {}
+    },
+    "elm:learningOpportunity": {
+        "dcterms:language": {
+            "@embed": "@always",
+            "@explicit": true,
+            "skos:prefLabel": {}
+        },
+        "elm:providedBy": {
+            "@embed": "@always",
+            "@explicit": true,
+            "skos:prefLabel": {}
+        },
+        "elm:isPartOf": {
+            "@embed": "@always",
+            "@explicit": true,
+            "skos:prefLabel": {}
+        },
+        "elm:hasPart": {
+            "@embed": "@always",
+            "@explicit": true,
+            "skos:prefLabel": {}
+        }
+    }
+}

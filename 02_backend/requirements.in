@@ -1,0 +1,23 @@
+# Web
+fastapi
+uvicorn[standard]
+
+# Data stores
+sqlalchemy
+psycopg2-binary
+minio
+
+# Config / CLI
+python-dotenv
+typer
+rich
+
+# RDF / vocab pipelines
+rdflib
+PyLD
+
+# Manifest discovery + crypto
+dnspython
+pyyaml
+cryptography
+requests

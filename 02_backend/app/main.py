@@ -1,10 +1,25 @@
+import logging
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from config import SERVICE_URL_FRONTEND
+from database import SessionLocal
 from routers import credentials, datalake, health, manifest, providers
+from services.keys import ensure_active_keypair
 
-app = FastAPI(title="QL-Backend")
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    with SessionLocal() as db:
+        ensure_active_keypair(db)
+    yield
+
+
+app = FastAPI(title="QL-Backend", lifespan=lifespan)
 
 origins = [
     "http://localhost:3000",

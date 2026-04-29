@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { providersApi } from '../api'
+import { providersApi, ApiError } from '../api'
 import { API_CONFIG } from '../api/config'
 import type { GetProviderResponse, DatalakeFile } from '../types'
 import Navbar from '@/components/layout/Navbar'
@@ -28,11 +28,6 @@ export default function DashboardPage() {
   const [datalakeFiles, setDatalakeFiles] = useState<Record<string, DatalakeFile[]>>({})
   const [datalakeDates, setDatalakeDates] = useState<Record<string, string[]>>({})
   const [selectedDate, setSelectedDate] = useState<Record<string, string>>({})
-  const [datalakeMetadata, setDatalakeMetadata] = useState<Record<string, {
-    last_file_pushed: string | null
-    last_file_pushed_date: string | null
-    last_file_pushed_path: string | null
-  }>>({})
 
   // Fetch provider data function (extracted to allow re-fetching on 426)
   const fetchProviderData = async () => {
@@ -179,7 +174,7 @@ export default function DashboardPage() {
     }
   }
 
-  const handleExpandDataSource = async (sourceUuid: string, sourcePath: string) => {
+  const handleExpandDataSource = async (sourceUuid: string) => {
     if (!providerData) return
 
     // Check if we already have data for this source
@@ -212,24 +207,19 @@ export default function DashboardPage() {
         provider_uuid: providerData.provider.provider_uuid,
         source_version_uuid: providerData.source_version.source_version_uuid,
         source_uuid: sourceUuid,
-        source_path: sourcePath,
       })
 
       setDatalakeFiles(prev => ({
         ...prev,
         [sourceUuid]: filesResponse.files
       }))
-
-      // Store metadata for latest pushed file
-      setDatalakeMetadata(prev => ({
-        ...prev,
-        [sourceUuid]: {
-          last_file_pushed: filesResponse.last_file_pushed,
-          last_file_pushed_date: filesResponse.last_file_pushed_date,
-          last_file_pushed_path: filesResponse.last_file_pushed_path,
-        }
-      }))
     } catch (error) {
+      // Treat "no data yet" (404) as empty state — render a no-data view instead of toasting
+      if (error instanceof ApiError && error.status === 404) {
+        setDatalakeDates(prev => ({ ...prev, [sourceUuid]: [] }))
+        setDatalakeFiles(prev => ({ ...prev, [sourceUuid]: [] }))
+        return
+      }
       console.error(`Error fetching datalake data for source ${sourceUuid}:`, error)
       showToast({
         type: 'error',
@@ -239,7 +229,7 @@ export default function DashboardPage() {
     }
   }
 
-  const handleDateChange = async (sourceUuid: string, sourcePath: string, date: string) => {
+  const handleDateChange = async (sourceUuid: string, date: string) => {
     if (!providerData) return
 
     try {
@@ -254,24 +244,18 @@ export default function DashboardPage() {
         provider_uuid: providerData.provider.provider_uuid,
         source_version_uuid: providerData.source_version.source_version_uuid,
         source_uuid: sourceUuid,
-        source_path: sourcePath,
       }, date)
 
       setDatalakeFiles(prev => ({
         ...prev,
         [sourceUuid]: filesResponse.files
       }))
-
-      // Update metadata for latest pushed file
-      setDatalakeMetadata(prev => ({
-        ...prev,
-        [sourceUuid]: {
-          last_file_pushed: filesResponse.last_file_pushed,
-          last_file_pushed_date: filesResponse.last_file_pushed_date,
-          last_file_pushed_path: filesResponse.last_file_pushed_path,
-        }
-      }))
     } catch (error) {
+      // Treat "no data for this date" (404) as empty state — silent, no toast
+      if (error instanceof ApiError && error.status === 404) {
+        setDatalakeFiles(prev => ({ ...prev, [sourceUuid]: [] }))
+        return
+      }
       console.error(`Error fetching files for date ${date}:`, error)
       showToast({
         type: 'error',
@@ -281,7 +265,7 @@ export default function DashboardPage() {
     }
   }
 
-  const handleRefreshDataLake = async (sourceUuid: string, sourcePath: string) => {
+  const handleRefreshDataLake = async (sourceUuid: string) => {
     if (!providerData) return
 
     setIsDataLakeRefreshing(true)
@@ -313,7 +297,6 @@ export default function DashboardPage() {
         provider_uuid: providerData.provider.provider_uuid,
         source_version_uuid: providerData.source_version.source_version_uuid,
         source_uuid: sourceUuid,
-        source_path: sourcePath,
       })
 
       // Complete progress
@@ -489,58 +472,46 @@ export default function DashboardPage() {
   const dataSources = providerData?.sources.map(source => {
     const sourceUrl = new URL(source.source_path)
     const sourceName = source.source_name || sourceUrl.pathname.split('/').pop() || source.source_path
-    const createdDate = new Date(source.created_at)
+    const pushedDate = source.last_file_pushed_date
+      ? new Date(source.last_file_pushed_date).toLocaleDateString('en-GB', {
+          day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC'
+        })
+      : '—'
 
     // Get datalake files for this source (files are sorted by last_modified from API)
     const sourceFiles = datalakeFiles[source.source_uuid] || []
 
-    const latestFile = sourceFiles.length > 0 ? sourceFiles[sourceFiles.length - 1] : null
-
-    // Get metadata for this source (last_file_pushed from API)
-    const metadata = datalakeMetadata[source.source_uuid]
-
-    // Map datalake files to the expected format
-    const mappedFiles = sourceFiles.map((file) => {
-      const fileDate = new Date(file.last_modified)
-      return {
-        filename: file.filename,
-        timestamp: fileDate.toLocaleDateString('en-GB', {
-          day: 'numeric',
-          month: 'short',
-          year: 'numeric',
-          hour: '2-digit',
-          minute: '2-digit',
-          timeZone: 'UTC'
-        }),
-        isPushed: file.push_status, // Use push_status from API (v2)
-        pushDate: fileDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }),
-        fullPath: file.full_path,
-      }
-    })
-
-    // Use last_file_pushed from API metadata if available
-    const latestPushedFile = metadata?.last_file_pushed && metadata?.last_file_pushed_date && metadata?.last_file_pushed_path ? {
-      filename: metadata.last_file_pushed,
-      timestamp: `Pushed ${new Date(metadata.last_file_pushed_date).toLocaleDateString('en-GB', {
-        day: 'numeric',
-        month: 'short',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-        timeZone: 'UTC'
-      })}`,
-      fullPath: metadata.last_file_pushed_path,
-    } : undefined
+    // Map datalake files, then sort so pushed files appear at the bottom
+    const mappedFiles = sourceFiles
+      .map((file) => {
+        const fileDate = new Date(file.last_modified)
+        return {
+          filename: file.filename,
+          timestamp: fileDate.toLocaleDateString('en-GB', {
+            day: 'numeric',
+            month: 'short',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+            timeZone: 'UTC'
+          }),
+          isPushed: file.push_status, // Use push_status from API (v2)
+          pushDate: fileDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }),
+          fullPath: file.full_path,
+          status: file.status,
+          logFilePath: file.log_file_path,
+        }
+      })
+      .sort((a, b) => Number(a.isPushed) - Number(b.isPushed))
 
     return {
       id: source.source_uuid,
+      sourceId: source.source_id,
       name: sourceName,
       source_name: source.source_name,
       type: source.source_type.toUpperCase(),
-      pushed: createdDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }),
-      latestFile: latestFile?.filename || sourceName,
-      files: mappedFiles.length > 0 ? mappedFiles : [],
-      latestPushedFile,
+      pushed: pushedDate,
+      files: mappedFiles,
       sourcePath: source.source_path,
       availableDates: datalakeDates[source.source_uuid] || [],
       selectedDate: selectedDate[source.source_uuid] || null,
@@ -587,7 +558,7 @@ export default function DashboardPage() {
 
       {/* Main Content */}
       <main className="flex-1 bg-white">
-        <div className="max-w-5xl mx-auto py-16">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-16">
           <div className="space-y-8">
             {/* Known Identifiers */}
             <section>

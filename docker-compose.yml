@@ -28,79 +28,14 @@ services:
     restart: unless-stopped
     command: postgres -c max_connections=100 -c shared_buffers=512MB
 
-  dragonfly:
-    image: docker.dragonflydb.io/dragonflydb/dragonfly
-    command: >
-      --bind=0.0.0.0
-      --requirepass=${DRAGONFLY_PASSWORD}
-      --maxmemory=0
-      --dir=/data
-      --dbfilename=${DRAGONFLY_DBNAME:-dump}
-      --keys_output_limit=${DRAGONFLY_KEYS_OUTPUT_LIMIT:-8192}
-      --dbnum=${DRAGONFLY_DBNUM:-6}
-      --cache_mode=${DRAGONFLY_CACHE_MODE:-true}
-      --hz=${DRAGONFLY_HZ:-100}
-      --snapshot_cron="${DRAGONFLY_SNAPSHOT_CRON:-* * * * *}"
-      --primary_port_http_enabled=false
-    volumes:
-      - dragonfly_data:/data
-    restart: unless-stopped
-
   minio:
     image: quay.io/minio/minio:RELEASE.2025-06-13T11-33-47Z
     environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_USER: admin
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
     command: minio server /data --console-address "0.0.0.0:9001"
     volumes:
       - minio_data:/data
-    restart: unless-stopped
-
-  mageai:
-    build:
-      context: ./01_mage
-      args:
-        BASE_CODE_PATH: /home/src
-        PROJECT_NAME: ql
-    command: mage start ql
-    environment:
-      USER_CODE_PATH: /home/src/ql
-      GIT_REPO_LINK: ${MAGE_WORKFLOW_REPO:-https://github.com/Knowledge-Innovation-Centre/quality-link-workflows.git}
-      GIT_BRANCH: ${MAGE_WORKFLOW_BRANCH:-main}
-      GIT_REPO_PATH: /home/src/ql
-      GIT_AUTH_TYPE: https
-      GIT_SYNC_ON_START: 1
-      MAGE_DATABASE_CONNECTION_URL: postgresql://quality_link:${POSTGRES_PASSWORD}@postgres:5432/mage
-      REDIS_URL: redis://:${DRAGONFLY_PASSWORD}@dragonfly:6379/0
-      REQUIRE_USER_AUTHENTICATION: 1
-      DEFAULT_OWNER_EMAIL: ${DEFAULT_OWNER_EMAIL}
-      DEFAULT_OWNER_USERNAME: ${DEFAULT_OWNER_USERNAME}
-      DEFAULT_OWNER_PASSWORD: ${DEFAULT_OWNER_PASSWORD}
-      MINIO_HOST: minio:9000
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
-      MINIO_BUCKET_NAME: ${BUCKET_NAME:-quality-link-storage}
-      DRAGONFLY_HOST: dragonfly
-      DRAGONFLY_PASSWORD: ${DRAGONFLY_PASSWORD}
-      POSTGRES_USER: quality_link
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_HOST: postgres
-      POSTGRES_PORT: 5432
-      POSTGRES_DB_NAME: backend
-      FUSEKI_USERNAME: admin
-      FUSEKI_PASSWORD: ${FUSEKI_ADMIN_PASSWORD}
-      FUSEKI_URL: http://fuseki:3030
-      FUSEKI_DATASET_NAME: ${FUSEKI_DATASET_NAME:-qualitylink}
-      MEILISEARCH_URL: ${MEILISEARCH_URL}
-      MEILISEARCH_INDEX: ${MEILISEARCH_INDEX:-ql_courses}
-      MEILISEARCH_API_KEY: ${MEILISEARCH_API_KEY}
-    volumes:
-      - mageai_data:/home/src/mage_data
-    depends_on:
-      - postgres
-      - dragonfly
-      - minio
-      - fuseki
     restart: unless-stopped
 
   backend:
@@ -112,15 +47,21 @@ services:
       DB_HOST: postgres
       DB_PORT: 5432
       DB_NAME: backend
-      BACKEND_REDIS_URL: redis://:${DRAGONFLY_PASSWORD}@dragonfly:6379/1
       MINIO_HOST: minio:9000
-      MINIO_KEY: ${MINIO_ROOT_USER}
-      MINIO_SECRET: ${MINIO_ROOT_PASSWORD}
-      BUCKET_NAME: ${BUCKET_NAME:-quality-link-storage}
+      MINIO_ROOT_USER: admin
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      MINIO_BUCKET_NAME: ${MINIO_BUCKET_NAME:-quality-link-storage}
+      FUSEKI_USERNAME: admin
+      FUSEKI_PASSWORD: ${FUSEKI_ADMIN_PASSWORD}
+      FUSEKI_URL: http://fuseki:3030
+      FUSEKI_DATASET_NAME: ${FUSEKI_DATASET_NAME:-qualitylink}
+      MEILISEARCH_URL: ${MEILISEARCH_URL}
+      MEILISEARCH_INDEX: ${MEILISEARCH_INDEX:-ql_courses}
+      MEILISEARCH_API_KEY: ${MEILISEARCH_API_KEY}
     depends_on:
       - postgres
-      - dragonfly
       - minio
+      - fuseki
     restart: unless-stopped
 
   fuseki:
@@ -144,7 +85,5 @@ services:
 volumes:
   fuseki_data:
   postgres_data:
-  dragonfly_data:
   minio_data:
-  mageai_data:
 

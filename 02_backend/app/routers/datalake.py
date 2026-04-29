@@ -1,19 +1,18 @@
 import io
-import json
 from datetime import datetime
 from typing import Any, Dict, Optional
 from uuid import UUID
 
-import redis
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from fastapi.responses import JSONResponse, StreamingResponse
 from minio.error import S3Error
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from config import BUCKET_NAME
+from config import MINIO_BUCKET_NAME
 from database import get_db
-from dependencies import get_minio_client, redis_client
+from dependencies import get_minio_client
+from services.datalake import queue_provider_data as queue_provider_data_service
 
 router = APIRouter(tags=["Datalake"])
 
@@ -44,57 +43,36 @@ async def list_datalake_files_v2(
             "last_file_pushed_path": source_result[2] if source_result else None,
         }
 
-        try:
-            minio_client = get_minio_client()
-        except Exception as e:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Failed to connect to MinIO: {str(e)}",
-            )
-
-        date_folder = None
         date_source = "provided"
 
         if date:
             try:
-                date_folder = datetime.strptime(date, "%Y-%m-%d").strftime("%Y-%m-%d")
+                datetime.strptime(date, "%Y-%m-%d").strftime("%Y-%m-%d")
             except ValueError:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Invalid date format. Please use YYYY-MM-DD format.",
                 )
         else:
-            manifest_path = f"datalake/courses/{provider_uuid}/{source_version_uuid}/{source_uuid}/source_manifest.json"
-            try:
-                data = minio_client.get_object(BUCKET_NAME, manifest_path)
-                manifest = json.loads(data.read().decode("utf-8"))
-                if "latest_date" in manifest and manifest["latest_date"]:
-                    date_folder = manifest["latest_date"]
-                    date = date_folder
-                    date_source = "manifest"
-                else:
-                    raise HTTPException(
-                        status_code=status.HTTP_404_NOT_FOUND,
-                        detail="No latest date found in datalake manifest file",
-                    )
-            except S3Error as e:
+            latest_row = db.execute(
+                text("""
+                    SELECT MAX(created_at_date)
+                    FROM transaction
+                    WHERE provider_uuid = :p
+                      AND source_version_uuid = :v
+                      AND source_uuid = :s
+                """),
+                {"p": str(provider_uuid), "v": str(source_version_uuid), "s": str(source_uuid)},
+            ).scalar()
+            if latest_row:
+                date = latest_row.isoformat()
+                date_source = "transaction"
+            else:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
-                    detail=f"Failed to retrieve datalake manifest file: {str(e)}",
-                )
-            except json.JSONDecodeError as e:
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail=f"Failed to parse datalake manifest file: {str(e)}",
+                    detail="No transactions recorded for this source yet.",
                 )
 
-        if not date_folder:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="No date could be determined.",
-            )
-
-        prefix = f"datalake/courses/{provider_uuid}/{source_version_uuid}/{source_uuid}/{date_folder}/"
         params_summary = {
             "provider_uuid": str(provider_uuid),
             "source_version_uuid": str(source_version_uuid),
@@ -103,47 +81,62 @@ async def list_datalake_files_v2(
             "date_source": date_source,
         }
 
-        try:
-            objects = minio_client.list_objects(BUCKET_NAME, prefix=prefix, recursive=True)
-            file_list = [
-                {
-                    "full_path": obj.object_name,
-                    "filename": obj.object_name.split("/")[-1],
-                    "size": obj.size,
-                    "last_modified": obj.last_modified.isoformat(),
-                    "push_status": False,
-                }
-                for obj in objects
-            ]
+        tx_rows = db.execute(
+            text("""
+                SELECT trans_uuid, run_number, status, started_at, finished_at,
+                       bronze_file_path, log_file_path, course_count, error_message
+                FROM transaction
+                WHERE provider_uuid = :p
+                  AND source_version_uuid = :v
+                  AND source_uuid = :s
+                  AND created_at_date = :d
+                ORDER BY run_number ASC
+            """),
+            {
+                "p": str(provider_uuid),
+                "v": str(source_version_uuid),
+                "s": str(source_uuid),
+                "d": date,
+            },
+        ).fetchall()
 
-            if not file_list:
-                return {
-                    "status": "success",
-                    "message": "No files found for the specified parameters",
-                    "params": params_summary,
-                    **source_info,
-                    "files": [],
-                    "count": 0,
-                }
+        file_list = []
+        for tx in tx_rows:
+            full_path = tx[5]
+            last_modified = tx[4] or tx[3]
+            file_list.append({
+                "full_path": full_path,
+                "filename": full_path.split("/")[-1] if full_path else None,
+                "last_modified": last_modified.isoformat() if last_modified else None,
+                "push_status": full_path is not None and full_path == source_info["last_file_pushed_path"],
+                "trans_uuid": str(tx[0]),
+                "run_number": tx[1],
+                "status": tx[2],
+                "started_at": tx[3].isoformat() if tx[3] else None,
+                "finished_at": tx[4].isoformat() if tx[4] else None,
+                "log_file_path": tx[6],
+                "course_count": tx[7],
+                "error_message": tx[8],
+            })
 
-            sorted_files = sorted(file_list, key=lambda x: x["last_modified"])
-            if date_folder == today_date and sorted_files:
-                sorted_files[-1]["push_status"] = True
-
+        if not file_list:
             return {
                 "status": "success",
-                "message": "Files retrieved successfully",
+                "message": "No files found for the specified parameters",
                 "params": params_summary,
-                "files": sorted_files,
                 **source_info,
-                "count": len(sorted_files),
+                "files": [],
+                "count": 0,
             }
 
-        except S3Error as e:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"MinIO error when listing files: {str(e)}",
-            )
+        return {
+            "status": "success",
+            "message": "Files retrieved successfully",
+            "params": params_summary,
+            "files": file_list,
+            **source_info,
+            "count": len(file_list),
+        }
 
     except HTTPException:
         raise
@@ -162,63 +155,41 @@ async def list_datalake_dates(
     db: Session = Depends(get_db),
 ) -> Dict[str, Any]:
     try:
-        try:
-            minio_client = get_minio_client()
-        except Exception as e:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Failed to connect to MinIO: {str(e)}",
-            )
-
-        manifest_path = f"datalake/courses/{provider_uuid}/{source_version_uuid}/{source_uuid}/source_manifest.json"
         params_summary = {
             "provider_uuid": str(provider_uuid),
             "source_version_uuid": str(source_version_uuid),
             "source_uuid": str(source_uuid),
         }
 
-        try:
-            data = minio_client.get_object(BUCKET_NAME, manifest_path)
-            manifest = json.loads(data.read().decode("utf-8"))
+        rows = db.execute(
+            text("""
+                SELECT DISTINCT created_at_date
+                FROM transaction
+                WHERE provider_uuid = :p
+                  AND source_version_uuid = :v
+                  AND source_uuid = :s
+                ORDER BY created_at_date DESC
+            """),
+            {"p": str(provider_uuid), "v": str(source_version_uuid), "s": str(source_uuid)},
+        ).fetchall()
 
-            if "dates" in manifest and isinstance(manifest["dates"], list):
-                dates = manifest["dates"]
-            elif "latest_date" in manifest and manifest["latest_date"]:
-                dates = [manifest["latest_date"]]
-            else:
-                return {
-                    "status": "success",
-                    "message": "No dates found in manifest file",
-                    "params": params_summary,
-                    "dates": [],
-                    "latest_date": None,
-                    "count": 0,
-                }
-
-            latest_date = manifest.get("latest_date") or (sorted(dates, reverse=True)[0] if dates else None)
-            sorted_dates = sorted(dates, reverse=True)
-
-            return {
-                "status": "success",
-                "message": "Dates retrieved successfully",
-                "params": params_summary,
-                "dates": sorted_dates,
-                "latest_date": latest_date,
-                "count": len(sorted_dates),
-            }
-
-        except S3Error as e:
-            if e.code == "NoSuchKey":
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No data pulled for this source yet.")
+        if not rows:
             raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Failed to retrieve list of datalake files: {str(e)}",
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="No data pulled for this source yet.",
             )
-        except json.JSONDecodeError as e:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Failed to parse datalake manifest file: {str(e)}",
-            )
+
+        sorted_dates = [r[0].isoformat() for r in rows]
+        latest_date = sorted_dates[0]
+
+        return {
+            "status": "success",
+            "message": "Dates retrieved successfully",
+            "params": params_summary,
+            "dates": sorted_dates,
+            "latest_date": latest_date,
+            "count": len(sorted_dates),
+        }
 
     except HTTPException:
         raise
@@ -251,6 +222,7 @@ async def download_datalake_file(
             ".json": "application/json",
             ".xml": "application/xml",
             ".ttl": "text/turtle",
+            ".txt": "text/plain",
         }
         content_type = next(
             (ct for ext, ct in content_type_map.items() if file_name.endswith(ext)),
@@ -258,7 +230,7 @@ async def download_datalake_file(
         )
 
         try:
-            response = minio_client.get_object(BUCKET_NAME, file_path)
+            response = minio_client.get_object(MINIO_BUCKET_NAME, file_path)
             file_stream = io.BytesIO(response.read())
             disposition = "inline" if preview else "attachment"
             return StreamingResponse(
@@ -286,107 +258,18 @@ async def download_datalake_file(
 
 @router.post("/queue_provider_data", status_code=status.HTTP_202_ACCEPTED)
 async def queue_provider_data(
+    background_tasks: BackgroundTasks,
     provider_uuid: UUID = Query(..., title="Provider UUID"),
     source_version_uuid: UUID = Query(..., title="Source Version UUID"),
     source_uuid: UUID = Query(..., title="Source UUID"),
-    source_path: str = Query(..., title="Source Path"),
     db: Session = Depends(get_db),
 ) -> Dict[str, Any]:
-    lock_key = f"pull_manifest:{provider_uuid}"
-
-    try:
-        if redis_client.exists(lock_key):
-            return JSONResponse(
-                status_code=423,
-                content={
-                    "status": "busy",
-                    "message": "Manifest is currently being pulled for this provider. Please try again later.",
-                    "provider_uuid": str(provider_uuid),
-                },
-            )
-
-        requested_version = db.execute(
-            text("""
-                SELECT version_date, version_id
-                FROM source_version
-                WHERE provider_uuid = :provider_uuid
-                AND source_version_uuid = :source_version_uuid
-            """),
-            {"provider_uuid": provider_uuid, "source_version_uuid": source_version_uuid},
-        ).fetchone()
-
-        if not requested_version:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Manifest file version not found for the specified provider",
-            )
-
-        latest_version = db.execute(
-            text("""
-                SELECT source_version_uuid, version_date, version_id
-                FROM source_version
-                WHERE provider_uuid = :provider_uuid
-                ORDER BY version_date DESC, version_id DESC
-                LIMIT 1
-            """),
-            {"provider_uuid": provider_uuid},
-        ).fetchone()
-
-        if not latest_version:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="No manifest file versions found for this provider",
-            )
-
-        if str(latest_version[0]) != str(source_version_uuid):
-            return JSONResponse(
-                status_code=410,
-                content={
-                    "status": "outdated",
-                    "message": "You are using an outdated manifest file version for this provider. Please refresh your page to retrieve the latest configurations.",
-                    "provider_uuid": str(provider_uuid),
-                    "requested_version": {
-                        "version_date": requested_version[0].isoformat(),
-                        "version_id": requested_version[1],
-                    },
-                    "latest_version": {
-                        "version_date": latest_version[1].isoformat(),
-                        "version_id": latest_version[2],
-                    },
-                },
-            )
-
-        provider_data = {
-            "provider_uuid": str(provider_uuid),
-            "source_version_uuid": str(source_version_uuid),
-            "source_uuid": str(source_uuid),
-            "queued_at": datetime.utcnow().isoformat(),
-            "status": "queued",
-        }
-
-        try:
-            redis_client.rpush("provider_data_queue", json.dumps(provider_data))
-            return {
-                "status": "success",
-                "message": "Provider data has been queued for processing",
-                "queue": "provider_data_queue",
-                "data": {
-                    "provider_uuid": provider_data["provider_uuid"],
-                    "source_version_uuid": provider_data["source_version_uuid"],
-                    "source_uuid": provider_data["source_uuid"],
-                    "queued_at": provider_data["queued_at"],
-                },
-            }
-        except redis.RedisError as redis_err:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Redis error: {str(redis_err)}",
-            )
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to queue provider data: {str(e)}",
-        )
+    result = queue_provider_data_service(
+        db, provider_uuid, source_version_uuid, source_uuid,
+        background_tasks=background_tasks,
+    )
+    if result.get("status") == "busy":
+        return JSONResponse(status_code=423, content=result)
+    if result.get("status") == "outdated":
+        return JSONResponse(status_code=410, content=result)
+    return result

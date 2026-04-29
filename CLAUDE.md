@@ -4,46 +4,85 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Quality Link Pipeline (QL-Pipeline) — a data integration platform for processing and indexing data on learning opportunities (courses, programmes, micro-credentials) from European higher education institutions.
+Quality Link Pipeline (QL-Pipeline) — a data integration platform that discovers, transforms, and indexes data on learning opportunities (courses, programmes, micro-credentials) from European higher education institutions.
 
-It discovers eudcation provider data from DEQAR. It discovers, transforms, and indexes course metadata from provider sources discovered using DNS TXT records and `.well-known` manifest URLs.
+The registry of providers is seeded from DEQAR. Each provider's data sources are discovered via DNS TXT records and `.well-known` manifest URLs, then fetched and projected into RDF (Jena Fuseki) and a search index (Meilisearch).
 
 ## Architecture
 
-Six Docker services orchestrated via `docker-compose.yml`, designed for Coolify deployment (no ports exposed by default):
+Five Docker services orchestrated via `docker-compose.yml`, designed for Coolify deployment (no ports exposed by default):
 
-- **Frontend** (`03_frontend/`) — React 18 + TypeScript + Vite + Tailwind CSS dashboard
-- **Backend** (`02_backend/`) — FastAPI REST API (single file: `app/main.py`)
-- **PostgreSQL** (`00_postgres/`) — Database with schema baked into the Docker image via `init.sql`
-- **MageAI** (`01_mage/`) — ETL workflow orchestration, pulls pipelines from external git repo
-- **MinIO** — S3-compatible object storage for the data lake
-- **Jena Fuseki** — RDF triplestore with SPARQL endpoint
-- **Dragonfly** — Redis-compatible cache (used for task queuing and locking)
+- **Frontend** (`03_frontend/`) — React 18 + TypeScript + Vite + Tailwind dashboard
+- **Backend** (`02_backend/`) — FastAPI REST API + Typer admin CLI; hosts the ETL pipeline in-process
+- **PostgreSQL** (`00_postgres/`) — operational database; schema baked into the image via `00_init.sql` + migration files `0N_*.sql`
+- **MinIO** — S3-compatible data lake
+- **Jena Fuseki** — RDF triplestore (three named graphs: courses, reference, vocabulary)
 
-Frontend talks to Backend. Backend talks to PostgreSQL, Dragonfly, and MinIO. MageAI connects to all data stores.
+Meilisearch is expected to run externally in production; add it via `docker-compose.override.yml` for local dev (see README). There is no longer a separate MageAI or Dragonfly/Redis service — ETL runs in-process in the backend, and per-provider concurrency is guarded by Postgres advisory locks.
+
+### Backend structure (`02_backend/app/`)
+
+The backend is modular, not a single-file app. Layout:
+
+- `main.py` — FastAPI app factory. Mounts `routers/` and a separate public sub-app at `/api/v1` with wildcard CORS for the `credentials` router (so provider domains can fetch the QL public key).
+- `cli.py` — Typer CLI entry point; assembles the groups defined under `cli/` (`provider`, `vocabulary`, `course`).
+- `cli/` — per-group command modules: `providers.py` (list / manifest / sources / refresh), `vocabulary.py` (fetch), `courses.py` (list / frame / fetch / silver / reindex — the course-pipeline ops).
+- `config.py` — env-var loading (DB, MinIO, Fuseki, Meilisearch, DEQAR, default vocabularies, graph IRIs).
+- `database.py` — SQLAlchemy engine + `SessionLocal`. Use `get_db` (FastAPI dep) in routers; open `SessionLocal()` directly in CLI commands and background tasks.
+- `routers/` — HTTP adapters only; delegate to services.
+- `services/` — business logic:
+  - `manifest.py` — DNS/`.well-known` discovery, validates manifest JSON/YAML, upserts `source_version` + `source` rows.
+  - `providers.py` — provider list/detail + `resolve_provider_uuid` (accepts UUID, ETER id, DEQAR id).
+  - `deqar.py` — refresh provider registry from DEQAR and push to the Fuseki reference graph.
+  - `datalake.py` — `queue_provider_data`: validates a fetch request (lock state, version freshness) and schedules `run_course_fetch` via `BackgroundTasks`.
+  - `course_fetch/` — the ETL pipeline: `bronze.py` downloads raw source data to MinIO, `silver.py` enriches to RDF and writes to Fuseki, `gold.py` frames JSON-LD and indexes into Meilisearch. Per-source-type adapters live in `course_fetch/source_types/` (`elm`, `ooapi`, `edu-api`).
+  - `fuseki.py`, `keys.py`, `locks.py`, `vocabulary.py` — Fuseki client, `ql_cred` keypair management, advisory-lock helpers, EU controlled-vocabulary fetcher.
+- `schema/frame.json` — JSON-LD frame used by the gold stage.
+
+### Locking model
+
+Concurrency control uses **Postgres advisory locks** (`services/locks.py`), not Redis. Locks are session-scoped (`pg_try_advisory_lock(ns, hashtext(key))`), so the manifest pull can commit mid-flight without releasing its lock. `NS_PULL_MANIFEST` is the only namespace today; add new ones as stable, never-renumbered integer constants. Always `release()` explicitly; connection death is the fallback.
+
+### ETL flow (bronze → silver → gold)
+
+`run_course_fetch(provider, version, source, path)` opens its own `SessionLocal` (it runs in a `BackgroundTask` after the HTTP response is sent, so it must not reuse the request session):
+
+1. **Bronze** — fetch raw data from the provider source, write to MinIO at `{bucket}/courses/{provider_uuid}/{source_version_uuid}/{source_uuid}/{YYYY-MM-DD}/...`.
+2. **Silver** — parse into an RDF graph, enrich against the reference graph, upload to Fuseki's courses graph.
+3. **Gold** — SPARQL → JSON-LD frame (`schema/frame.json`) → flat docs → Meilisearch index.
+4. Log a row in `transaction` (unique per provider+version+date).
+
+### Database schema
+
+`00_postgres/00_init.sql` defines the baseline; `01_*`, `02_*`, `03_*.sql` are additive migrations applied at image build. Tables:
+
+- `provider` — institution registry (DEQAR / ETER / SCHAC ids, manifest probe log in `manifest_json`).
+- `source_version` — a dated snapshot of a provider's manifest (`version_date` + `version_id`).
+- `source` — individual data source within a version (type, path, last fetch state).
+- `transaction` — processing log, unique per (provider, version, date).
+- `ql_cred` — QL signing keypair; the active one is served by `/api/v1/public-key`.
 
 ## Common Commands
 
 ### Docker (full stack)
 ```bash
-docker-compose up -d              # Start all services
-docker-compose down               # Stop all services
-docker-compose logs -f backend    # Tail logs for a service
-docker-compose build backend      # Rebuild after dependency changes
+docker-compose up -d
+docker-compose logs -f backend
+docker-compose build backend && docker-compose up -d backend  # after requirements change
 ```
 
-For local port access, create `docker-compose.override.yml` (see README).
+For local port access and a local Meilisearch, create `docker-compose.override.yml` (see README's Development section for a template).
 
-### Frontend development
+### Frontend
 ```bash
 cd 03_frontend
 npm install
-npm run dev          # Vite dev server (proxies /api to VITE_API_URL)
+npm run dev          # Vite dev server, proxies /api to VITE_API_URL
 npm run build        # tsc && vite build
-npm run lint         # ESLint (TypeScript + React)
+npm run lint
 ```
 
-### Backend development
+### Backend — local (no containers)
 ```bash
 cd 02_backend
 python -m venv venv && source venv/bin/activate
@@ -51,43 +90,45 @@ pip install -r requirements.txt
 uvicorn app.main:app --reload
 ```
 
-### Rebuilding Python services after adding dependencies
-```bash
-# MageAI: edit 01_mage/requirements.txt, then:
-docker-compose build mageai && docker-compose up -d mageai
+`requirements.txt` is compiled from `requirements.in` — edit the `.in` file and re-pin when changing dependencies.
 
-# Backend: edit 02_backend/requirements.txt, then:
-docker-compose build backend && docker-compose up -d backend
+### Backend — admin CLI
+
+The Typer CLI is the preferred way to drive provider operations manually (running it in-process avoids HTTP/BackgroundTask round-trips):
+
+```bash
+cd 02_backend && source venv/bin/activate
+cd app  # the CLI imports top-level modules (config, database, services/...)
+
+python cli.py course list     <UUID|ETER_ID|DEQAR_ID> [--limit N] [--offset N]  # list courses from Fuseki
+python cli.py course frame    <URI|UUID>                  # get framed JSON-LD for a single course
+python cli.py course fetch    <UUID|ETER_ID|DEQAR_ID> [--source SOURCE_UUID]    # bronze→silver→gold
+python cli.py course silver   [<UUID|ETER_ID|DEQAR_ID>] [--source SOURCE_UUID] [--all]  # re-run silver from latest bronze
+python cli.py course reindex  [<URI|UUID>] [--provider <UUID|ETER_ID|DEQAR_ID>] [--all]  # re-run gold / Meilisearch
+python cli.py provider list   [SEARCH] [--with-data] [--page N] [--page-size N]
+python cli.py provider manifest <UUID|ETER_ID|DEQAR_ID>   # DNS + .well-known discovery
+python cli.py provider sources  <UUID|ETER_ID|DEQAR_ID>   # show probes + latest version's sources
+python cli.py provider refresh  [--limit N] [--offset N]  # pull registry from DEQAR
+python cli.py vocabulary fetch  [SCHEME_URI ...]          # defaults to DEFAULT_VOCABULARIES
 ```
 
-## Key Files
-
-| Path | Purpose |
-|------|---------|
-| `02_backend/app/main.py` | All backend API endpoints (single large file) |
-| `00_postgres/init.sql` | Database schema (provider, source_version, source, transaction, ql_cred tables) |
-| `.example.env` | Environment variable template — copy to `.env` |
-| `docker-compose.yml` | Service definitions and wiring |
-| `03_frontend/vite.config.ts` | Vite config with `@` path alias and `/api` proxy |
+Or run inside the container: `docker-compose exec backend python cli.py ...`.
 
 ## Code Conventions
 
-### Frontend
-- Path alias: `@/` maps to `src/`
-- Pages in `src/pages/`, feature components in `src/components/features/`, reusable UI in `src/components/ui/`
-- API layer: `src/api/` contains client classes, `src/hooks/` has React hooks (useProviders, useProvider)
-- Types in `src/types/`
-- ESLint config: `.eslintrc.cjs` with `@typescript-eslint` and `react-refresh` plugins
-
 ### Backend
-- Single FastAPI app in `02_backend/app/main.py` — all endpoints, models, and DB access in one file
-- Database: SQLAlchemy with raw SQL for complex queries
-- Redis locking pattern: prevents concurrent processing of the same provider
-- MinIO paths: `datalake/courses/{provider_uuid}/{source_version_uuid}/{source_uuid}/{date}/{files}`
+- **Routers are thin**; business logic lives in `services/`. New HTTP endpoints should call into (or extend) a service function, not inline SQL.
+- **Database access** uses SQLAlchemy with raw `text()` SQL — no ORM models. Parameterize everything.
+- **Sessions**: HTTP handlers use `Depends(get_db)`; CLI commands and background tasks open their own `SessionLocal()` via `with` blocks.
+- **Provider identifiers**: services that take a provider accept a UUID; the CLI resolves UUID / ETER id / DEQAR id via `services.providers.resolve_provider_uuid`.
+- **CORS**: the main app allows the configured frontend origin; the `/api/v1` sub-app (public key) uses wildcard CORS — don't add other routes to it.
+
+### Frontend
+- Path alias `@/` → `src/`. Pages in `src/pages/`, feature components in `src/components/features/`, reusable UI in `src/components/ui/`, API clients in `src/api/`, hooks in `src/hooks/`, types in `src/types/`.
 
 ## Environment
 
-Copy `.example.env` to `.env`. Required variables: `POSTGRES_PASSWORD`, `DRAGONFLY_PASSWORD`, `MINIO_ROOT_USER`, `MINIO_ROOT_PASSWORD`, `FUSEKI_ADMIN_PASSWORD`, `DEFAULT_OWNER_EMAIL/USERNAME/PASSWORD`, `VITE_API_URL`, `VITE_RECAPTCHA_SITE_KEY`. Commented-out values in `.example.env` show defaults set in `docker-compose.yml`.
+Copy `.example.env` to `.env`. Required: `POSTGRES_PASSWORD`, `MINIO_ROOT_USER`, `MINIO_ROOT_PASSWORD`, `FUSEKI_ADMIN_PASSWORD`, `MEILISEARCH_URL`, `MEILISEARCH_API_KEY`, `VITE_API_URL`, `VITE_RECAPTCHA_SITE_KEY`. Optional overrides (graph names, dataset name, DEQAR API URL, default vocabulary scheme URIs) are in `02_backend/app/config.py`.
 
 ## Branching
 

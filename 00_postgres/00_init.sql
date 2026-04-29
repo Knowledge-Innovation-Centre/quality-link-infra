@@ -1,6 +1,3 @@
-CREATE DATABASE mage;
-
-GRANT ALL PRIVILEGES ON DATABASE mage TO quality_link;
 GRANT ALL PRIVILEGES ON DATABASE backend TO quality_link;
 
 \c backend;
@@ -61,11 +58,20 @@ CREATE TABLE IF NOT EXISTS transaction (
     trans_uuid UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     provider_uuid UUID NOT NULL,
     source_version_uuid UUID NOT NULL,
+    source_uuid UUID,
+    run_number INTEGER NOT NULL DEFAULT 1,
+    status VARCHAR(20) NOT NULL DEFAULT 'success',
     created_at_date DATE NOT NULL DEFAULT CURRENT_DATE,
     created_at_date_time TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    started_at TIMESTAMP WITH TIME ZONE,
+    finished_at TIMESTAMP WITH TIME ZONE,
+    bronze_file_path VARCHAR,
+    log_file_path VARCHAR,
+    course_count INTEGER,
+    error_message TEXT,
     FOREIGN KEY (provider_uuid) REFERENCES provider(provider_uuid),
     FOREIGN KEY (source_version_uuid) REFERENCES source_version(source_version_uuid),
-    UNIQUE (provider_uuid, source_version_uuid, created_at_date)
+    FOREIGN KEY (source_uuid) REFERENCES source(source_uuid)
 );
 
 CREATE TABLE IF NOT EXISTS ql_cred (
@@ -88,3 +94,8 @@ CREATE INDEX IF NOT EXISTS idx_source_source_version_uuid ON source(source_versi
 CREATE INDEX IF NOT EXISTS idx_source_source_type ON source(source_type);
 CREATE INDEX IF NOT EXISTS idx_transaction_provider_uuid ON transaction(provider_uuid);
 CREATE INDEX IF NOT EXISTS idx_transaction_source_version_uuid ON transaction(source_version_uuid);
+CREATE INDEX IF NOT EXISTS idx_transaction_source_uuid ON transaction(source_uuid);
+CREATE INDEX IF NOT EXISTS idx_transaction_provider_date
+    ON transaction(provider_uuid, source_version_uuid, source_uuid, created_at_date DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_transaction_run
+    ON transaction (provider_uuid, source_version_uuid, source_uuid, created_at_date, run_number);
