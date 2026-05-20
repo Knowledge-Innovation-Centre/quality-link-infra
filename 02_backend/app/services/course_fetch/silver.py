@@ -157,6 +157,9 @@ def _enrich_rdf_graph(
             if (los_uri, DCTERMS.type, None) not in graph:
                 graph.add((los_uri, DCTERMS.type, DEFAULT_TYPE))
 
+            if (los_uri, QL.sourceType, None) not in graph:
+                graph.add((los_uri, QL.sourceType, QL.ELMSource))
+
             # convert ECTS credits to xsd:double
             if (los_uri, ELM.creditPoint, None) in graph:
                 for creditPoint in graph.objects(los_uri, ELM.creditPoint):

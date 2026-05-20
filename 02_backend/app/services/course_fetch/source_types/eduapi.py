@@ -80,6 +80,7 @@ class EduApiDataSource(DataSourceType):
         course_uuid = self._get_uuid(courseId, course_uri)
 
         graph.add((course_uri, RDF.type, QL.LearningOpportunitySpecification))
+        graph.add((course_uri, QL.sourceType, QL.EduApiSource))
         graph.add((course_uri, DCTERMS.type, self.COURSE_TYPE))
         graph.add((URIRef(f"urn:uuid:{course_uuid}"), OWL.sameAs, course_uri))
 
