@@ -1,10 +1,10 @@
 import logging
 import uuid
-from typing import Any, Dict
+from typing import Any, Dict, List
 from urllib.parse import urljoin
 
 from rdflib import BNode, Graph, Literal, Namespace, RDF, URIRef
-from rdflib.namespace import DCTERMS, OWL, SKOS
+from rdflib.namespace import DCTERMS, OWL, SKOS, XSD
 
 from .base import DataSourceType
 
@@ -24,29 +24,78 @@ class EduApiDataSource(DataSourceType):
         "doctoral": URIRef("http://data.europa.eu/snb/eqf/8"),
     }
 
+    MODE_MAP = {
+        "online":   URIRef("http://data.europa.eu/snb/learning-assessment/920fbb3cbe"), # Online
+        "blended":  URIRef("http://data.europa.eu/snb/learning-assessment/c_3a90b26d"), # Hybrid
+        "onGround": URIRef("http://data.europa.eu/snb/learning-assessment/9191af2ed9"), # Presential
+    }
+
     def _do_fetch(self, session):
         url = urljoin(self.source["path"], "courseTemplates")
-        logger.info("Edu-API request to %s", url)
+        url_offerings = urljoin(self.source["path"], "courseOfferings")
 
         params = {}
         if self.source.get("parameters"):
             params.update(self.source["parameters"])
+        #params["limit"] = self.source.get("pageSize", 500)
+
+        logger.info("Edu-API request to %s", url)
+
+        #params["offset"] = 0
+        has_next_page = True
+
+        courses = {}
+        offerings = {}
+
+        while has_next_page:
+            response = session.get(url, params=params, timeout=60)
+            response.raise_for_status()
+            items = response.json()
+
+            #if len(items) >= params["limit"]:
+            #    params["offset"] += params["limit"]
+            #else:
+            has_next_page = False
+
+            logger.info("Edu-API page: %s courses", len(items))
+
+            for course in items:
+                courses[course.get('sourcedId')] = course
+                offerings[course.get('sourcedId')] = []
+
+        logger.info("Edu-API request to %s", url_offerings)
+
+        #params["offset"] = 0
+        has_next_page = True
+
+        while has_next_page:
+            response = session.get(url_offerings, params=params, timeout=60)
+            response.raise_for_status()
+            items = response.json()
+
+            # if len(items) >= params["limit"]:
+            #    params["offset"] += params["limit"]
+            #else:
+            has_next_page = False
+
+            logger.info("Edu-API page: %s course offerings", len(items))
+
+            for offering in items:
+                if offering.get('course') in offerings:
+                    offerings[offering.get('course')].append(offering)
+                else:
+                    logger.warning(f"- courseOffering {offering['sourcedId']} refers to unknown courseTemplate {offering['course']}")
 
         graph = Graph()
         graph.bind("ql", QL)
         graph.bind("elm", ELM)
         graph.bind("dcterms", DCTERMS)
 
-        response = session.get(url, params=params, timeout=60)
-        response.raise_for_status()
-        items = response.json()
-
-        logger.info("Edu-API page: %s courses", len(items))
-
         success_count = 0
         failed_count = 0
-        for course in items:
-            if self.map_course_to_rdf(course, graph):
+
+        for course_id in courses:
+            if self.map_course_to_rdf(courses[course_id], graph, offerings[course_id]):
                 success_count += 1
             else:
                 failed_count += 1
@@ -71,7 +120,7 @@ class EduApiDataSource(DataSourceType):
             return multilingual_field[0].get("value", "")
         return str(multilingual_field[0])
 
-    def map_course_to_rdf(self, course: Dict, graph: Graph):
+    def map_course_to_rdf(self, course: Dict, graph: Graph, offerings: List):
         courseId = course.get("sourcedId")
         if not courseId:
             return None
@@ -103,5 +152,56 @@ class EduApiDataSource(DataSourceType):
 
         if course.get("level") and course["level"] in self.LEVEL_MAP:
             graph.add((course_uri, ELM.EQFLevel, self.LEVEL_MAP[course["level"]]))
+
+        # Offerings of this course
+
+        for offering in offerings:
+            offeringId = offering.get("sourcedId")
+            offering_uri = URIRef(
+                f"{course_uri}/offerings/{offeringId}"
+            )
+            graph.add((offering_uri, RDF.type, QL.LearningOpportunityInstance))
+            graph.add((offering_uri, ELM.learningAchievementSpecification, course_uri))
+
+            if offering.get("primaryCode") and isinstance(offering["primaryCode"], dict):
+                code = BNode()
+                graph.add((code, RDF.type, ELM.Identifier))
+                graph.add((code, SKOS.notation, Literal(offering["primaryCode"].get("identifier"))))
+                graph.add((code, ELM.schemeName, Literal(offering["primaryCode"].get("identifierType"))))
+                graph.add((offering_uri, ADMS.identifier, code))
+            if offering.get("title"):
+                title = self.extract_english_value(offering.get("title"))
+                if title:
+                    graph.add((offering_uri, DCTERMS.title, Literal(title, lang="en")))
+            if offering.get("description"):
+                description = self.extract_english_value(offering.get("description"))
+                if description:
+                    graph.add((offering_uri, DCTERMS.description, Literal(description, lang="en")))
+
+            """
+            if offering.get("teachingLanguage"):
+                lang_code = offering.get("teachingLanguage")
+                if isinstance(lang_code, str):
+                    graph.add((offering_uri, DCTERMS.language, URIRef(
+                        f"http://publications.europa.eu/resource/authority/language/{lang_code.upper()}"
+                    )))
+            """
+
+            if offering.get("startDate") or offering.get("endDate") or offering.get("academicSessionCode"):
+                temporal = BNode()
+                graph.add((temporal, RDF.type, DCTERMS.PeriodOfTime))
+                if offering.get("startDate"):
+                    graph.add((temporal, ELM.startDate, Literal(offering.get("startDate"), datatype=XSD.date)))
+                if offering.get("endDate"):
+                    graph.add((temporal, ELM.endDate, Literal(offering.get("endDate"), datatype=XSD.date)))
+                if offering.get("academicSessionCode"):
+                    graph.add((temporal, SKOS.prefLabel, Literal(offering.get("academicSessionCode"))))
+                graph.add((offering_uri, DCTERMS.temporal, temporal))
+
+            self._value_to_concept(offering, "offeringFormat", graph, offering_uri, ELM.mode, self.MODE_MAP)
+
+            self._value_to_literal(offering, "maxNumberStudents",       graph, offering_uri, QL.enrolmentCapacity,      datatype=XSD.nonNegativeInteger)
+            self._value_to_literal(offering, "enrolledNumberStudents",  graph, offering_uri, QL.enrolledLearnerCount,   datatype=XSD.nonNegativeInteger)
+            self._value_to_literal(offering, "minNumberStudents",       graph, offering_uri, QL.enrolmentMinimum,       datatype=XSD.nonNegativeInteger)
 
         return course_uuid
