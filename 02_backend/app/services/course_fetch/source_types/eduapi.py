@@ -30,6 +30,11 @@ class EduApiDataSource(DataSourceType):
         "onGround": URIRef("http://data.europa.eu/snb/learning-assessment/9191af2ed9"), # Presential
     }
 
+    COURSE_TYPE_MAP = {
+        "internship": URIRef("http://data.europa.eu/snb/learning-opportunity/77b99de990"),
+        "thesis":     URIRef("http://data.europa.eu/snb/learning-opportunity/b2434ca358"),
+    }
+
     def _do_fetch(self, session):
         url = urljoin(self.source["path"], "courseTemplates")
         url_offerings = urljoin(self.source["path"], "courseOfferings")
@@ -140,9 +145,15 @@ class EduApiDataSource(DataSourceType):
 
         graph.add((course_uri, RDF.type, QL.LearningOpportunitySpecification))
         graph.add((course_uri, QL.sourceType, QL.EduApiSource))
-        graph.add((course_uri, DCTERMS.type, self.COURSE_TYPE))
         graph.add((URIRef(f"urn:uuid:{course_uuid}"), OWL.sameAs, course_uri))
 
+        # type
+        if "courseType" in course and course["courseType"] in self.COURSE_TYPE_MAP:
+            graph.add((course_uri, DCTERMS.type, self.COURSE_TYPE_MAP[course["courseType"]]))
+        else:
+            graph.add((course_uri, DCTERMS.type, self.COURSE_TYPE))
+
+        # offering organisation
         org_uuid = self._org_uuid(course)
         if org_uuid:
             graph.add((course_uri, DCTERMS.publisher, URIRef(f"urn:uuid:{org_uuid}")))
