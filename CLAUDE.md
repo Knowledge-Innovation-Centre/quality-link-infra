@@ -109,6 +109,9 @@ python cli.py provider list   [SEARCH] [--with-data] [--page N] [--page-size N]
 python cli.py provider manifest <UUID|ETER_ID|DEQAR_ID>   # DNS + .well-known discovery
 python cli.py provider sources  <UUID|ETER_ID|DEQAR_ID>   # show probes + latest version's sources
 python cli.py provider refresh  [--limit N] [--offset N]  # pull registry from DEQAR
+python cli.py provider oauth set    <UUID|ETER_ID|DEQAR_ID> --endpoint URL --client-id ID [--client-secret SECRET] [--scope SCOPE]
+python cli.py provider oauth list   <UUID|ETER_ID|DEQAR_ID>                  # show stored OAuth creds (secret masked)
+python cli.py provider oauth delete <UUID|ETER_ID|DEQAR_ID> --endpoint URL
 python cli.py vocabulary fetch  [SCHEME_URI ...]          # defaults to DEFAULT_VOCABULARIES
 ```
 

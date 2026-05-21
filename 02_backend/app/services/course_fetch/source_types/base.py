@@ -28,8 +28,9 @@ class DataSourceType:
     def __init__(self, source: Dict):
         self.source = source
         self._headers = {"user-agent": "quality-link-aggregator/1.0.0-alpha"}
-        if source.get("auth") and source["auth"].get("type") == "httpheader":
-            self._headers[source["auth"].get("field", "x-qualitylink-auth")] = source["auth"].get("value")
+        auth = source.get("auth") or {}
+        if auth.get("type") == "httpheader":
+            self._headers[auth.get("field", "x-qualitylink-auth")] = auth.get("value")
         if source.get("headers"):
             self._headers.update(source["headers"])
 
@@ -39,6 +40,17 @@ class DataSourceType:
         Returns (content bytes, MIME content-type).
         """
         with requests.Session() as session:
+            auth = self.source.get("auth") or {}
+            if auth.get("type") == "oauth2.0":
+                # Deferred to fetch() because it needs a DB session to look up
+                # out-of-band credentials. Imports kept local to avoid pulling
+                # SQLAlchemy into module-import time for source-type modules.
+                from database import SessionLocal
+                from services.oauth import get_oauth_token
+
+                with SessionLocal() as db:
+                    token = get_oauth_token(db, self.source["provider_uuid"], auth)
+                session.headers["Authorization"] = f"Bearer {token}"
             session.headers.update(self._headers)
             return self._do_fetch(session)
 

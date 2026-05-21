@@ -5,6 +5,7 @@ import typer
 from fastapi import HTTPException
 from rich.console import Console
 from rich.table import Table
+from sqlalchemy import text
 
 from config import DEQAR_API_URL
 from database import SessionLocal
@@ -23,6 +24,8 @@ from services.providers import (
 
 
 providers_app = typer.Typer(help="Provider and data source operations", no_args_is_help=True)
+oauth_app = typer.Typer(help="Manage out-of-band OAuth 2.0 client credentials", no_args_is_help=True)
+providers_app.add_typer(oauth_app, name="oauth")
 
 console = Console()
 
@@ -262,4 +265,122 @@ def providers_refresh_from_deqar(
     table.add_row("Fuseki success", str(push_stats.success))
     table.add_row("Fuseki failed", str(push_stats.failed))
     console.print(table)
+
+
+def _mask_secret(secret: str) -> str:
+    if not secret:
+        return "-"
+    if len(secret) <= 6:
+        return "*" * len(secret)
+    return f"{secret[:2]}{'*' * (len(secret) - 4)}{secret[-2:]}"
+
+
+@oauth_app.command("set")
+def oauth_set(
+    provider: str = typer.Argument(..., help="Provider UUID, ETER id, or DEQAR id"),
+    endpoint: str = typer.Option(..., "--endpoint", help="OAuth token endpoint URL"),
+    client_id: str = typer.Option(..., "--client-id", help="OAuth client_id"),
+    client_secret: Optional[str] = typer.Option(
+        None,
+        "--client-secret",
+        help="OAuth client_secret (prompted if omitted, to keep it out of shell history)",
+    ),
+    scope: Optional[str] = typer.Option(None, "--scope", help="Default OAuth scope (optional)"),
+) -> None:
+    """
+    Set or update out-of-band OAuth 2.0 client credentials for a provider's
+    token endpoint. Used when a manifest source declares
+    auth.type = 'oauth2.0' without inline client_id/client_secret.
+    """
+    if client_secret is None:
+        client_secret = typer.prompt("Client secret", hide_input=True)
+    if not client_secret:
+        _die("Client secret cannot be empty.")
+
+    with SessionLocal() as db:
+        provider_uuid = _resolve(db, provider)
+        db.execute(
+            text("""
+                INSERT INTO provider_oauth_cred
+                    (provider_uuid, token_endpoint, client_id, client_secret, scope)
+                VALUES (:provider_uuid, :token_endpoint, :client_id, :client_secret, :scope)
+                ON CONFLICT (provider_uuid, token_endpoint) DO UPDATE
+                SET client_id = EXCLUDED.client_id,
+                    client_secret = EXCLUDED.client_secret,
+                    scope = EXCLUDED.scope,
+                    updated_at = NOW()
+            """),
+            {
+                "provider_uuid": str(provider_uuid),
+                "token_endpoint": endpoint,
+                "client_id": client_id,
+                "client_secret": client_secret,
+                "scope": scope,
+            },
+        )
+        db.commit()
+    console.print(f"[green]Stored OAuth credentials[/green] for {provider_uuid} @ {endpoint}")
+
+
+@oauth_app.command("list")
+def oauth_list(
+    provider: str = typer.Argument(..., help="Provider UUID, ETER id, or DEQAR id"),
+) -> None:
+    """List OAuth credentials configured for a provider (secret is masked)."""
+    with SessionLocal() as db:
+        provider_uuid = _resolve(db, provider)
+        rows = db.execute(
+            text("""
+                SELECT token_endpoint, client_id, client_secret, scope, updated_at
+                FROM provider_oauth_cred
+                WHERE provider_uuid = :provider_uuid
+                ORDER BY token_endpoint
+            """),
+            {"provider_uuid": str(provider_uuid)},
+        ).fetchall()
+
+    if not rows:
+        console.print(f"[yellow]No OAuth credentials configured for {provider_uuid}[/yellow]")
+        raise typer.Exit(code=2)
+
+    table = Table(title=f"OAuth credentials — {provider_uuid}")
+    table.add_column("Token endpoint")
+    table.add_column("Client ID")
+    table.add_column("Client secret")
+    table.add_column("Scope")
+    table.add_column("Updated")
+    for row in rows:
+        updated = row[4].isoformat()[:16].replace("T", " ") if row[4] else "-"
+        table.add_row(
+            row[0],
+            row[1],
+            _mask_secret(row[2]),
+            row[3] or "-",
+            updated,
+        )
+    console.print(table)
+
+
+@oauth_app.command("delete")
+def oauth_delete(
+    provider: str = typer.Argument(..., help="Provider UUID, ETER id, or DEQAR id"),
+    endpoint: str = typer.Option(..., "--endpoint", help="OAuth token endpoint URL"),
+) -> None:
+    """Delete a stored OAuth credential for a provider's token endpoint."""
+    with SessionLocal() as db:
+        provider_uuid = _resolve(db, provider)
+        result = db.execute(
+            text("""
+                DELETE FROM provider_oauth_cred
+                WHERE provider_uuid = :provider_uuid AND token_endpoint = :token_endpoint
+            """),
+            {"provider_uuid": str(provider_uuid), "token_endpoint": endpoint},
+        )
+        db.commit()
+
+    if result.rowcount:
+        console.print(f"[green]Deleted[/green] OAuth credentials for {provider_uuid} @ {endpoint}")
+    else:
+        console.print(f"[yellow]No OAuth credentials found[/yellow] for {provider_uuid} @ {endpoint}")
+        raise typer.Exit(code=2)
 

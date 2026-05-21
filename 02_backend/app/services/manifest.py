@@ -1,3 +1,4 @@
+import logging
 from typing import Optional, Tuple, List, Dict, Any
 from urllib.parse import urlparse
 from base64 import b64decode
@@ -20,6 +21,7 @@ from datetime import date
 
 from services.locks import NS_PULL_MANIFEST, is_locked, release, try_acquire
 
+logger = logging.getLogger(__name__)
 
 def refresh_manifest_for_provider(
     db: Session, provider_uuid: UUID
@@ -68,8 +70,7 @@ def refresh_manifest_for_provider(
         except Exception:
             # Lock will be released when the connection ends, so we don't
             # propagate — but do log so leaks are visible.
-            import logging
-            logging.getLogger(__name__).warning(
+            logger.warning(
                 "Failed to release pull_manifest lock for %s", provider_key,
                 exc_info=True,
             )
@@ -173,6 +174,59 @@ def pull_manifest(provider_uuid: str, metadata: Dict, db: Session) -> Dict[str, 
     }
 
 
+def _normalise_source_auth(
+    source_auth: Dict[str, Any], source_uuid: Optional[str], db: Session
+) -> Optional[Dict[str, Any]]:
+    """Validate a source's `auth` block and decrypt any encrypted secrets.
+
+    Returns the cleaned dict (cleartext) ready to persist into source.source_auth,
+    or None if the block is malformed and should be dropped.
+    """
+    auth_type = source_auth.get("type")
+
+    if auth_type == "httpheader":
+        encrypted_value = source_auth.get("value")
+        if encrypted_value:
+            try:
+                source_auth["value"] = decrypt_auth_value(
+                    encrypted_value, get_private_key(db)
+                )
+            except Exception:
+                logger.warning(f"Failed to decrypt auth for source {source_uuid}")
+        return source_auth
+
+    if auth_type == "oauth2.0":
+        if not source_auth.get("token_endpoint"):
+            logger.warning(
+                f"Skipping oauth2.0 auth for source {source_uuid}: token_endpoint is required"
+            )
+            return None
+
+        has_id = bool(source_auth.get("client_id"))
+        has_secret = bool(source_auth.get("client_secret"))
+        if has_id != has_secret:
+            logger.warning(
+                f"Skipping oauth2.0 inline credentials for source {source_uuid}: "
+                "client_id and client_secret must both be present, or both omitted"
+            )
+            source_auth.pop("client_id", None)
+            source_auth.pop("client_secret", None)
+        elif has_secret:
+            try:
+                source_auth["client_secret"] = decrypt_auth_value(
+                    source_auth["client_secret"], get_private_key(db)
+                )
+            except Exception:
+                logger.warning(
+                    f"Failed to decrypt oauth2.0 client_secret for source {source_uuid}"
+                )
+                source_auth.pop("client_id", None)
+                source_auth.pop("client_secret", None)
+        return source_auth
+
+    return source_auth
+
+
 def process_manifest(provider_uuid: str, manifest_data: Dict, db: Session) -> Tuple[bool, bool]:
     """
     Process manifest_data and update DB accordingly
@@ -235,14 +289,10 @@ def process_manifest(provider_uuid: str, manifest_data: Dict, db: Session) -> Tu
                     if not (item.get("source_uuid") and item.get("path") and item.get("type")):
                         continue
                     source_auth = item.pop("auth", None)
-                    if isinstance(source_auth, dict) and source_auth.get("type") == "httpheader":
-                        encrypted_value = source_auth.get("value")
-                        if encrypted_value:
-                            try:
-                                decrypted = decrypt_auth_value(encrypted_value, get_private_key(db))
-                                source_auth["value"] = decrypted
-                            except Exception:
-                                print(f"Failed to decrypt auth for source {item.get('source_uuid')}")
+                    if isinstance(source_auth, dict):
+                        source_auth = _normalise_source_auth(
+                            source_auth, item.get("source_uuid"), db
+                        )
                     source_records.append({
                         "source_uuid": item.pop("source_uuid"),
                         "source_version_uuid": source_version_uuid,
