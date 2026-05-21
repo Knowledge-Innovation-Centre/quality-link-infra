@@ -37,11 +37,11 @@ class EduApiDataSource(DataSourceType):
         params = {}
         if self.source.get("parameters"):
             params.update(self.source["parameters"])
-        #params["limit"] = self.source.get("pageSize", 500)
+        params["limit"] = self.source.get("pageSize", 500)
 
         logger.info("Edu-API request to %s", url)
 
-        #params["offset"] = 0
+        params["offset"] = 0
         has_next_page = True
 
         courses = {}
@@ -52,10 +52,10 @@ class EduApiDataSource(DataSourceType):
             response.raise_for_status()
             items = response.json()
 
-            #if len(items) >= params["limit"]:
-            #    params["offset"] += params["limit"]
-            #else:
-            has_next_page = False
+            if len(items) >= params["limit"]:
+                params["offset"] += params["limit"]
+            else:
+                has_next_page = False
 
             logger.info("Edu-API page: %s courses", len(items))
 
@@ -65,7 +65,7 @@ class EduApiDataSource(DataSourceType):
 
         logger.info("Edu-API request to %s", url_offerings)
 
-        #params["offset"] = 0
+        params["offset"] = 0
         has_next_page = True
 
         while has_next_page:
@@ -73,10 +73,10 @@ class EduApiDataSource(DataSourceType):
             response.raise_for_status()
             items = response.json()
 
-            # if len(items) >= params["limit"]:
-            #    params["offset"] += params["limit"]
-            #else:
-            has_next_page = False
+            if len(items) >= params["limit"]:
+                params["offset"] += params["limit"]
+            else:
+                has_next_page = False
 
             logger.info("Edu-API page: %s course offerings", len(items))
 
