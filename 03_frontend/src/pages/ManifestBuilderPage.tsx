@@ -21,11 +21,17 @@ interface SourceData {
   authType: string
   authField: string
   authValue: string
+  tokenEndpoint: string
+  oauthScope: string
+  clientId: string
+  clientSecret: string
   contentType: string
   pageSize: string
   headers: KvPair[]
   queryParams: KvPair[]
 }
+
+type EncryptableField = 'authValue' | 'clientSecret'
 
 type OutputFormat = 'json' | 'yaml'
 
@@ -46,6 +52,10 @@ function createSource(): SourceData {
     authType: '',
     authField: '',
     authValue: '',
+    tokenEndpoint: '',
+    oauthScope: '',
+    clientId: '',
+    clientSecret: '',
     contentType: '',
     pageSize: '',
     headers: [],
@@ -124,6 +134,13 @@ function buildManifest(
         const auth: Record<string, string> = { type: 'httpheader' }
         if (s.authField.trim()) auth.field = s.authField.trim()
         if (s.authValue.trim()) auth.value = s.authValue.trim()
+        src.auth = auth
+      } else if (s.authType === 'oauth2.0') {
+        const auth: Record<string, string> = { type: 'oauth2.0' }
+        if (s.tokenEndpoint.trim()) auth.token_endpoint = s.tokenEndpoint.trim()
+        if (s.oauthScope.trim()) auth.scope = s.oauthScope.trim()
+        if (s.clientId.trim()) auth.client_id = s.clientId.trim()
+        if (s.clientSecret.trim()) auth.client_secret = s.clientSecret.trim()
         src.auth = auth
       }
 
@@ -215,7 +232,7 @@ function SourceCard({
   index: number
   onChange: (id: number, updates: Partial<SourceData>) => void
   onRemove: (id: number) => void
-  onEncrypt: (id: number) => void
+  onEncrypt: (id: number, field: EncryptableField) => void
   encryptStatus: { type: string; msg: string } | null
 }) {
   const update = (updates: Partial<SourceData>) => onChange(source.id, updates)
@@ -399,6 +416,7 @@ function SourceCard({
             >
               <option value="">None (IP-based / no auth)</option>
               <option value="httpheader">HTTP Header</option>
+              <option value="oauth2.0">OAuth 2.0 (client credentials)</option>
             </select>
           </div>
           {source.authType === 'httpheader' && (
@@ -429,7 +447,91 @@ function SourceCard({
                   />
                   <button
                     className="inline-flex items-center gap-1.5 px-2 py-1 rounded text-xs font-medium bg-gray-100 text-gray-700 border border-gray-200 hover:bg-gray-200"
-                    onClick={() => onEncrypt(source.id)}
+                    onClick={() => onEncrypt(source.id, 'authValue')}
+                    title="Encrypt with aggregator public key"
+                  >
+                    Encrypt
+                  </button>
+                </div>
+                <p className="text-xs text-gray-400 mt-1">
+                  Click <strong>Encrypt</strong> to replace the plain-text value with an RSA-OAEP
+                  encrypted, Base64-encoded ciphertext using the aggregator's public key.
+                </p>
+                {encryptStatus && (
+                  <div
+                    className={`text-xs mt-1 px-2.5 py-1.5 rounded ${
+                      encryptStatus.type === 'success'
+                        ? 'bg-green-50 text-green-600'
+                        : encryptStatus.type === 'error'
+                          ? 'bg-red-50 text-red-600'
+                          : 'bg-blue-50 text-blue-800'
+                    }`}
+                  >
+                    {encryptStatus.msg}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+          {source.authType === 'oauth2.0' && (
+            <div className="mt-2 space-y-2">
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">
+                  Token Endpoint <span className="text-red-600">*</span>
+                </label>
+                <input
+                  type="url"
+                  className="w-full px-2.5 py-1.5 border border-gray-300 rounded text-sm focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600/10"
+                  placeholder="https://auth.example.org/oauth/token"
+                  value={source.tokenEndpoint}
+                  onChange={(e) => update({ tokenEndpoint: e.target.value })}
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">
+                  Scope <span className="font-normal text-gray-400">(optional)</span>
+                </label>
+                <input
+                  type="text"
+                  className="w-full px-2.5 py-1.5 border border-gray-300 rounded text-sm focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600/10"
+                  placeholder="e.g. read:courses"
+                  value={source.oauthScope}
+                  onChange={(e) => update({ oauthScope: e.target.value })}
+                />
+              </div>
+              <div className="text-xs text-gray-500 px-3 py-2 bg-blue-50 border-l-[3px] border-blue-600 rounded-r">
+                Leave <strong>Client ID</strong> and <strong>Client Secret</strong> empty to use
+                credentials configured out-of-band on the aggregator (via the{' '}
+                <code className="text-xs">provider oauth set</code> CLI command). If you fill in
+                either field, you must fill in both.
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">
+                  Client ID <span className="font-normal text-gray-400">(optional)</span>
+                </label>
+                <input
+                  type="text"
+                  className="w-full px-2.5 py-1.5 border border-gray-300 rounded text-sm focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600/10"
+                  placeholder="OAuth client_id (cleartext)"
+                  value={source.clientId}
+                  onChange={(e) => update({ clientId: e.target.value })}
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">
+                  Client Secret <span className="font-normal text-gray-400">(optional)</span>
+                </label>
+                <div className="flex gap-2 items-stretch">
+                  <input
+                    type="text"
+                    className="flex-1 px-2.5 py-1.5 border border-gray-300 rounded text-sm focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600/10"
+                    placeholder="Plain-text or encrypted client_secret"
+                    value={source.clientSecret}
+                    onChange={(e) => update({ clientSecret: e.target.value })}
+                  />
+                  <button
+                    className="inline-flex items-center gap-1.5 px-2 py-1 rounded text-xs font-medium bg-gray-100 text-gray-700 border border-gray-200 hover:bg-gray-200"
+                    onClick={() => onEncrypt(source.id, 'clientSecret')}
                     title="Encrypt with aggregator public key"
                   >
                     Encrypt
@@ -548,12 +650,12 @@ export default function ManifestBuilderPage() {
     }
   }, [apiRoot])
 
-  // Encrypt a source's auth value
+  // Encrypt a source's secret (either auth.value or oauth client_secret)
   const encryptSourceValue = useCallback(
-    async (sourceId: number) => {
+    async (sourceId: number, field: EncryptableField) => {
       const source = sources.find((s) => s.id === sourceId)
       if (!source) return
-      const raw = source.authValue.trim()
+      const raw = source[field].trim()
       if (!raw) {
         setEncryptStatuses((prev) => ({
           ...prev,
@@ -582,7 +684,7 @@ export default function ManifestBuilderPage() {
         const encrypted = btoa(binary)
 
         setSources((prev) =>
-          prev.map((s) => (s.id === sourceId ? { ...s, authValue: encrypted } : s))
+          prev.map((s) => (s.id === sourceId ? { ...s, [field]: encrypted } : s))
         )
         setEncryptStatuses((prev) => ({
           ...prev,
@@ -592,9 +694,16 @@ export default function ManifestBuilderPage() {
           },
         }))
       } catch (e) {
+        // RSA-OAEP/SHA-1 with a 2048-bit key caps plaintext at 214 bytes;
+        // longer secrets trigger an opaque WebCrypto failure. Hint at that.
+        const msg = (e as Error).message || String(e)
+        const hint =
+          raw.length > 200
+            ? ' (RSA-OAEP can encrypt at most ~214 bytes — use a shorter secret, or configure this credential out-of-band via the aggregator CLI.)'
+            : ''
         setEncryptStatuses((prev) => ({
           ...prev,
-          [sourceId]: { type: 'error', msg: `Encryption failed: ${(e as Error).message}` },
+          [sourceId]: { type: 'error', msg: `Encryption failed: ${msg}${hint}` },
         }))
       }
     },
