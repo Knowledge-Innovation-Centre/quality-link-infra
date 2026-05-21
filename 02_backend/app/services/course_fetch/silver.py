@@ -148,6 +148,11 @@ def _enrich_rdf_graph(
         for loi in loi_subjects:
             if (loi, ELM.providedBy, None) not in graph and provider_uri:
                 graph.add((loi, ELM.providedBy, URIRef(provider_uri)))
+            if same_as_map:
+                for prov in list(graph.objects(loi, ELM.providedBy)):
+                    if isinstance(prov, URIRef) and str(prov) in same_as_map:
+                        graph.remove((loi, ELM.providedBy, prov))
+                        graph.add((loi, ELM.providedBy, URIRef(same_as_map[str(prov)])))
 
         for los_uri in los_subjects:
             # set default values

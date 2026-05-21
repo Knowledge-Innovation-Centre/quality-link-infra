@@ -1,6 +1,6 @@
 import logging
 import uuid
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 from urllib.parse import urljoin
 
 from rdflib import BNode, Graph, Literal, Namespace, RDF, URIRef
@@ -106,6 +106,16 @@ class EduApiDataSource(DataSourceType):
         )
         return graph.serialize(format="turtle", encoding="utf-8"), "text/turtle"
 
+    def _org_uuid(self, obj: Dict) -> Optional[str]:
+        organization = obj.get("organization")
+        if not isinstance(organization, str) or not organization:
+            return None
+        try:
+            return str(uuid.UUID(organization))
+        except ValueError:
+            logger.warning("Invalid organization UUID %r on %s", organization, obj.get("sourcedId"))
+            return None
+
     def extract_english_value(self, multilingual_field: Any) -> str:
         if isinstance(multilingual_field, str):
             return multilingual_field
@@ -132,6 +142,10 @@ class EduApiDataSource(DataSourceType):
         graph.add((course_uri, QL.sourceType, QL.EduApiSource))
         graph.add((course_uri, DCTERMS.type, self.COURSE_TYPE))
         graph.add((URIRef(f"urn:uuid:{course_uuid}"), OWL.sameAs, course_uri))
+
+        org_uuid = self._org_uuid(course)
+        if org_uuid:
+            graph.add((course_uri, DCTERMS.publisher, URIRef(f"urn:uuid:{org_uuid}")))
 
         if course.get("primaryCode") and isinstance(course["primaryCode"], dict):
             code = BNode()
@@ -162,6 +176,10 @@ class EduApiDataSource(DataSourceType):
             )
             graph.add((offering_uri, RDF.type, QL.LearningOpportunityInstance))
             graph.add((offering_uri, ELM.learningAchievementSpecification, course_uri))
+
+            offering_org_uuid = self._org_uuid(offering)
+            if offering_org_uuid:
+                graph.add((offering_uri, ELM.providedBy, URIRef(f"urn:uuid:{offering_org_uuid}")))
 
             if offering.get("primaryCode") and isinstance(offering["primaryCode"], dict):
                 code = BNode()
