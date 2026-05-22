@@ -19,7 +19,7 @@ import json
 import uuid as uuid_lib
 from datetime import date
 
-from services.locks import NS_PULL_MANIFEST, is_locked, release, try_acquire
+from services.locks import NS_PULL_MANIFEST, advisory_lock
 
 logger = logging.getLogger(__name__)
 
@@ -35,44 +35,33 @@ def refresh_manifest_for_provider(
     """
     provider_key = str(provider_uuid)
 
-    if not try_acquire(db, NS_PULL_MANIFEST, provider_key):
-        return {
-            "status": "busy",
-            "message": "This provider is currently being processed. Please try again later.",
-            "provider_uuid": provider_key,
-        }
+    with advisory_lock(db, NS_PULL_MANIFEST, provider_key) as acquired:
+        if not acquired:
+            return {
+                "status": "busy",
+                "message": "This provider is currently being processed. Please try again later.",
+                "provider_uuid": provider_key,
+            }
 
-    try:
-        row = db.execute(
-            text("SELECT metadata FROM provider WHERE provider_uuid = :provider_uuid"),
-            {"provider_uuid": provider_uuid},
-        ).fetchone()
-
-        if not row:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Provider not found"
-            )
-
-        return pull_manifest(provider_uuid, row[0], db)
-
-    except HTTPException:
-        db.rollback()
-        raise
-    except Exception as e:
-        db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Unexpected error: {e}",
-        )
-    finally:
         try:
-            release(db, NS_PULL_MANIFEST, provider_key)
-        except Exception:
-            # Lock will be released when the connection ends, so we don't
-            # propagate — but do log so leaks are visible.
-            logger.warning(
-                "Failed to release pull_manifest lock for %s", provider_key,
-                exc_info=True,
+            row = db.execute(
+                text("SELECT metadata FROM provider WHERE provider_uuid = :provider_uuid"),
+                {"provider_uuid": provider_uuid},
+            ).fetchone()
+
+            if not row:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND, detail="Provider not found"
+                )
+
+            return pull_manifest(provider_uuid, row[0], db)
+
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Unexpected error: {e}",
             )
 
 def get_private_key(db: Session) -> Optional[str]:

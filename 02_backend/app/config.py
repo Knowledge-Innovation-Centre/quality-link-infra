@@ -36,12 +36,18 @@ GRAPH_REFERENCE = "http://data.quality-link.eu/graph/reference"
 GRAPH_VOCABULARY = "http://data.quality-link.eu/graph/vocabulary"
 
 DEFAULT_VOCABULARIES = [
-    "http://data.europa.eu/snb/isced-f/25831c2",                    # ISCED Fields of Study
-    "http://publications.europa.eu/resource/authority/language",    # Languages
-    "http://data.europa.eu/snb/eqf/25831c2",                        # EQF levels
-    "http://data.europa.eu/snb/learning-opportunity/25831c2",       # Learning opportunity type
-    "http://data.europa.eu/snb/learning-assessment/25831c2",        # Mode of learning and assessment
-    "http://publications.europa.eu/resource/authority/country",     # Countries and territories
+    # Each entry: {"scheme": <uri>, "properties": [<extra prop uri>, ...]}.
+    # "properties" is optional; if omitted, only skos:prefLabel is fetched.
+    {   "scheme": "http://data.europa.eu/snb/isced-f/25831c2" },                  # ISCED Fields of Study
+    {   "scheme": "http://publications.europa.eu/resource/authority/language",    # Languages
+        "properties": [
+            "http://www.w3.org/2004/02/skos/core#notation",
+        ],
+    },
+    {   "scheme": "http://data.europa.eu/snb/eqf/25831c2" },                      # EQF levels
+    {   "scheme": "http://data.europa.eu/snb/learning-opportunity/25831c2" },     # Learning opportunity type
+    {   "scheme": "http://data.europa.eu/snb/learning-assessment/25831c2" },      # Mode of learning and assessment
+    {   "scheme": "http://publications.europa.eu/resource/authority/country" },   # Countries and territories
 ]
 
 SCHEMA_DIR = Path(os.getenv("SCHEMA_DIR", Path(__file__).resolve().parent / "schema"))

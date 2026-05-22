@@ -9,6 +9,8 @@ explicitly; connection death is the belt-and-braces backstop.
 """
 
 import logging
+from contextlib import contextmanager
+from typing import Iterator
 
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -40,6 +42,45 @@ def release(db: Session, namespace: int, key: str) -> bool:
         {"ns": namespace, "key": key},
     ).fetchone()
     return bool(row and row[0])
+
+
+@contextmanager
+def advisory_lock(db: Session, namespace: int, key: str) -> Iterator[bool]:
+    """Acquire a session-scoped advisory lock; release it on exit.
+
+    Yields True if the lock was acquired, False if another session holds it.
+    Callers must check the yielded value and skip their protected work when
+    False:
+
+        with advisory_lock(db, NS_FOO, key) as acquired:
+            if not acquired:
+                return  # or report busy
+            ...
+
+    Contract: any DB writes inside the block must be committed before the
+    block exits. On exit the session is rolled back unconditionally so the
+    unlock SQL runs on a clean session and can't be poisoned by a failed
+    transaction — which means uncommitted writes are discarded.
+    """
+    acquired = try_acquire(db, namespace, key)
+    try:
+        yield acquired
+    finally:
+        if acquired:
+            try:
+                db.rollback()
+            except Exception:
+                logger.warning(
+                    "advisory_lock: pre-release rollback failed for ns=%s key=%s",
+                    namespace, key, exc_info=True,
+                )
+            try:
+                release(db, namespace, key)
+            except Exception:
+                logger.warning(
+                    "advisory_lock: release failed for ns=%s key=%s",
+                    namespace, key, exc_info=True,
+                )
 
 
 def is_locked(db: Session, namespace: int, key: str) -> bool:

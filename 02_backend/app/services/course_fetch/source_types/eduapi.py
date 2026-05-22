@@ -1,10 +1,13 @@
 import logging
 import uuid
+import re
 from typing import Any, Dict, List, Optional
 from urllib.parse import urljoin
 
 from rdflib import BNode, Graph, Literal, Namespace, RDF, URIRef
 from rdflib.namespace import DCTERMS, OWL, SKOS, XSD
+
+from services.vocabulary import language_tag_to_uri
 
 from .base import DataSourceType
 
@@ -30,6 +33,11 @@ class EduApiDataSource(DataSourceType):
         "onGround": URIRef("http://data.europa.eu/snb/learning-assessment/9191af2ed9"), # Presential
     }
 
+    COURSE_TYPE_MAP = {
+        "internship": URIRef("http://data.europa.eu/snb/learning-opportunity/77b99de990"),
+        "thesis":     URIRef("http://data.europa.eu/snb/learning-opportunity/b2434ca358"),
+    }
+
     def _do_fetch(self, session):
         url = urljoin(self.source["path"], "courseTemplates")
         url_offerings = urljoin(self.source["path"], "courseOfferings")
@@ -37,11 +45,11 @@ class EduApiDataSource(DataSourceType):
         params = {}
         if self.source.get("parameters"):
             params.update(self.source["parameters"])
-        #params["limit"] = self.source.get("pageSize", 500)
+        params["limit"] = self.source.get("pageSize", 500)
 
         logger.info("Edu-API request to %s", url)
 
-        #params["offset"] = 0
+        params["offset"] = 0
         has_next_page = True
 
         courses = {}
@@ -52,10 +60,10 @@ class EduApiDataSource(DataSourceType):
             response.raise_for_status()
             items = response.json()
 
-            #if len(items) >= params["limit"]:
-            #    params["offset"] += params["limit"]
-            #else:
-            has_next_page = False
+            if len(items) >= params["limit"]:
+                params["offset"] += params["limit"]
+            else:
+                has_next_page = False
 
             logger.info("Edu-API page: %s courses", len(items))
 
@@ -65,7 +73,7 @@ class EduApiDataSource(DataSourceType):
 
         logger.info("Edu-API request to %s", url_offerings)
 
-        #params["offset"] = 0
+        params["offset"] = 0
         has_next_page = True
 
         while has_next_page:
@@ -73,10 +81,10 @@ class EduApiDataSource(DataSourceType):
             response.raise_for_status()
             items = response.json()
 
-            # if len(items) >= params["limit"]:
-            #    params["offset"] += params["limit"]
-            #else:
-            has_next_page = False
+            if len(items) >= params["limit"]:
+                params["offset"] += params["limit"]
+            else:
+                has_next_page = False
 
             logger.info("Edu-API page: %s course offerings", len(items))
 
@@ -140,9 +148,15 @@ class EduApiDataSource(DataSourceType):
 
         graph.add((course_uri, RDF.type, QL.LearningOpportunitySpecification))
         graph.add((course_uri, QL.sourceType, QL.EduApiSource))
-        graph.add((course_uri, DCTERMS.type, self.COURSE_TYPE))
         graph.add((URIRef(f"urn:uuid:{course_uuid}"), OWL.sameAs, course_uri))
 
+        # type
+        if "courseType" in course and course["courseType"] in self.COURSE_TYPE_MAP:
+            graph.add((course_uri, DCTERMS.type, self.COURSE_TYPE_MAP[course["courseType"]]))
+        else:
+            graph.add((course_uri, DCTERMS.type, self.COURSE_TYPE))
+
+        # offering organisation
         org_uuid = self._org_uuid(course)
         if org_uuid:
             graph.add((course_uri, DCTERMS.publisher, URIRef(f"urn:uuid:{org_uuid}")))
@@ -166,6 +180,20 @@ class EduApiDataSource(DataSourceType):
 
         if course.get("level") and course["level"] in self.LEVEL_MAP:
             graph.add((course_uri, ELM.EQFLevel, self.LEVEL_MAP[course["level"]]))
+
+        # try to parse credits
+        if course.get("creditType") == "credit" and "creditsAwarded" in course:
+            if m := re.match(r"\d+(\.\d+)?", course["creditsAwarded"]):
+                credit = BNode()
+                graph.add((credit, ELM.point, Literal(m[0], datatype=XSD.double)))
+                if re.search("ECTS", course["creditsAwarded"], re.IGNORECASE):
+                    graph.add((credit, ELM.framework, URIRef("http://data.europa.eu/snb/education-credit/6fcec5c5af")))
+                graph.add((course_uri, ELM.creditPoint, credit))
+
+        if course.get("teachingLanguage"):
+            lang_uri = language_tag_to_uri(course.get("teachingLanguage"))
+            if isinstance(lang_uri, URIRef):
+                graph.add((course_uri, DCTERMS.language, lang_uri))
 
         # Offerings of this course
 
@@ -196,14 +224,10 @@ class EduApiDataSource(DataSourceType):
                 if description:
                     graph.add((offering_uri, DCTERMS.description, Literal(description, lang="en")))
 
-            """
             if offering.get("teachingLanguage"):
-                lang_code = offering.get("teachingLanguage")
-                if isinstance(lang_code, str):
-                    graph.add((offering_uri, DCTERMS.language, URIRef(
-                        f"http://publications.europa.eu/resource/authority/language/{lang_code.upper()}"
-                    )))
-            """
+                lang_uri = language_tag_to_uri(offering.get("teachingLanguage"))
+                if isinstance(lang_uri, URIRef):
+                    graph.add((offering_uri, DCTERMS.language, lang_uri))
 
             if offering.get("startDate") or offering.get("endDate") or offering.get("academicSessionCode"):
                 temporal = BNode()

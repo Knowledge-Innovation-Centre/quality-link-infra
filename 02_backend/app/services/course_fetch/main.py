@@ -12,7 +12,7 @@ from minio import Minio
 from config import MINIO_BUCKET_NAME
 from database import SessionLocal
 from dependencies import get_minio_client
-from services.locks import NS_COURSE_FETCH, release, try_acquire
+from services.locks import NS_COURSE_FETCH, advisory_lock
 
 from .bronze import fetch_bronze, latest_bronze_for_source
 from .gold import index_gold
@@ -93,14 +93,14 @@ def run_course_fetch(
     minio_client = get_minio_client()
 
     with SessionLocal() as db, requests.Session() as http:
-        if not try_acquire(db, NS_COURSE_FETCH, str(source_uuid)):
-            logger.warning(
-                "course_fetch: source %s already being processed — skipping",
-                source_uuid,
-            )
-            return
+        with advisory_lock(db, NS_COURSE_FETCH, str(source_uuid)) as acquired:
+            if not acquired:
+                logger.warning(
+                    "course_fetch: source %s already being processed — skipping",
+                    source_uuid,
+                )
+                return
 
-        try:
             started = start_transaction(db, provider_uuid, source_version_uuid, source_uuid)
             trans_uuid = started[0] if started else None
 
@@ -148,14 +148,6 @@ def run_course_fetch(
                     error_message=error_message,
                     log_file_path=log_path,
                 )
-        finally:
-            try:
-                release(db, NS_COURSE_FETCH, str(source_uuid))
-            except Exception:
-                logger.warning(
-                    "Failed to release NS_COURSE_FETCH lock for %s",
-                    source_uuid, exc_info=True,
-                )
 
 
 def run_silver_only(source_uuid: UUID) -> dict:
@@ -195,15 +187,15 @@ def run_silver_only(source_uuid: UUID) -> dict:
         result["source_version_uuid"] = message["source_version_uuid"]
         result["bronze_file_path"] = message["file_path"]
 
-        if not try_acquire(db, NS_COURSE_FETCH, str(source_uuid)):
-            result["status"] = "busy"
-            result["error"] = "source already being processed"
-            logger.warning(
-                "course_fetch (silver-only): source %s busy — skipping", source_uuid,
-            )
-            return result
+        with advisory_lock(db, NS_COURSE_FETCH, str(source_uuid)) as acquired:
+            if not acquired:
+                result["status"] = "busy"
+                result["error"] = "source already being processed"
+                logger.warning(
+                    "course_fetch (silver-only): source %s busy — skipping", source_uuid,
+                )
+                return result
 
-        try:
             started = start_transaction(db, provider_uuid, source_version_uuid, source_uuid)
             trans_uuid = started[0] if started else None
 
@@ -249,13 +241,5 @@ def run_silver_only(source_uuid: UUID) -> dict:
 
             result["status"] = status_val
             result["error"] = error_message
-        finally:
-            try:
-                release(db, NS_COURSE_FETCH, str(source_uuid))
-            except Exception:
-                logger.warning(
-                    "Failed to release NS_COURSE_FETCH lock for %s",
-                    source_uuid, exc_info=True,
-                )
 
     return result
