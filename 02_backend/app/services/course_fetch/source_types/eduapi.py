@@ -1,5 +1,6 @@
 import logging
 import uuid
+import re
 from typing import Any, Dict, List, Optional
 from urllib.parse import urljoin
 
@@ -177,6 +178,15 @@ class EduApiDataSource(DataSourceType):
 
         if course.get("level") and course["level"] in self.LEVEL_MAP:
             graph.add((course_uri, ELM.EQFLevel, self.LEVEL_MAP[course["level"]]))
+
+        # try to parse credits
+        if course.get("creditType") == "credit" and "creditsAwarded" in course:
+            if m := re.match(r"\d+(\.\d+)?", course["creditsAwarded"]):
+                credit = BNode()
+                graph.add((credit, ELM.point, Literal(m[0], datatype=XSD.double)))
+                if re.search("ECTS", course["creditsAwarded"], re.IGNORECASE):
+                    graph.add((credit, ELM.framework, URIRef("http://data.europa.eu/snb/education-credit/6fcec5c5af")))
+                graph.add((course_uri, ELM.creditPoint, credit))
 
         # Offerings of this course
 
