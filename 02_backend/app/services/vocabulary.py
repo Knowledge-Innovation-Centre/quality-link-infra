@@ -1,6 +1,6 @@
 import logging
 from dataclasses import dataclass
-from typing import Iterable, List, Mapping, Optional, Tuple, Union
+from typing import Dict, Iterable, List, Mapping, Optional, Tuple, Union
 
 import requests
 from rdflib import Graph, Literal, URIRef
@@ -13,6 +13,18 @@ from services import fuseki
 logger = logging.getLogger(__name__)
 
 EU_SPARQL_ENDPOINT = "https://publications.europa.eu/webapi/rdf/sparql"
+
+EU_LANGUAGE_SCHEME = "http://publications.europa.eu/resource/authority/language"
+
+_EUVOC_NS = "http://publications.europa.eu/ontology/euvoc#"
+_ISO_639_DATATYPES = (
+    f"{_EUVOC_NS}ISO_639_1",
+    f"{_EUVOC_NS}ISO_639_2B",
+    f"{_EUVOC_NS}ISO_639_2T",
+    f"{_EUVOC_NS}ISO_639_3",
+)
+
+_LANGUAGE_INDEX: Optional[Dict[str, URIRef]] = None
 
 VocabSpec = Union[str, Mapping[str, object]]
 
@@ -177,6 +189,60 @@ def build_skos_turtle(
         graph.add((URIRef(s), URIRef(p), o))
 
     return graph.serialize(format="turtle")
+
+
+def _load_language_index() -> Dict[str, URIRef]:
+    """Query the local vocabulary graph for ISO 639 notations on language concepts."""
+    datatype_list = ", ".join(f"<{dt}>" for dt in _ISO_639_DATATYPES)
+    query = f"""PREFIX skos: <{SKOS}>
+
+SELECT ?concept ?notation
+FROM <{GRAPH_VOCABULARY}>
+WHERE {{
+  ?concept skos:inScheme <{EU_LANGUAGE_SCHEME}> ;
+           skos:notation ?notation .
+  FILTER(datatype(?notation) IN ({datatype_list}))
+}}
+"""
+    bindings = fuseki.sparql_select(query)
+    index: Dict[str, URIRef] = {}
+    for b in bindings:
+        concept = (b.get("concept") or {}).get("value")
+        notation = (b.get("notation") or {}).get("value")
+        if concept and notation:
+            index[notation.strip().lower()] = URIRef(concept)
+    logger.info("Language index loaded: %s notation(s)", len(index))
+    return index
+
+
+def _clear_language_cache() -> None:
+    global _LANGUAGE_INDEX
+    _LANGUAGE_INDEX = None
+
+
+def language_tag_to_uri(tag: str) -> Optional[URIRef]:
+    """Look up the EU authority URI for a BCP 47 language tag.
+
+    Only the primary language subtag is matched (e.g. ``"en-US" → "en"``);
+    region / script / variant subtags are ignored. Matches case-insensitively
+    against ``skos:notation`` values typed as ``euvoc:ISO_639_1``,
+    ``ISO_639_2B``, ``ISO_639_2T`` or ``ISO_639_3`` in the local vocabulary
+    graph. Returns ``None`` (and logs a warning) if no match is found.
+    """
+    if not isinstance(tag, str):
+        return None
+    primary = tag.strip().replace("_", "-").split("-", 1)[0].lower()
+    if not primary:
+        return None
+
+    global _LANGUAGE_INDEX
+    if _LANGUAGE_INDEX is None:
+        _LANGUAGE_INDEX = _load_language_index()
+
+    uri = _LANGUAGE_INDEX.get(primary)
+    if uri is None:
+        logger.warning("No EU language URI for tag %r (primary subtag %r)", tag, primary)
+    return uri
 
 
 def refresh_vocabulary(vocab: VocabSpec) -> VocabStats:

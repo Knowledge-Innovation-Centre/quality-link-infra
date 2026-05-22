@@ -7,6 +7,8 @@ from urllib.parse import urljoin
 from rdflib import BNode, Graph, Literal, Namespace, RDF, URIRef
 from rdflib.namespace import DCTERMS, OWL, SKOS, XSD
 
+from services.vocabulary import language_tag_to_uri
+
 from .base import DataSourceType
 
 logger = logging.getLogger(__name__)
@@ -188,6 +190,11 @@ class EduApiDataSource(DataSourceType):
                     graph.add((credit, ELM.framework, URIRef("http://data.europa.eu/snb/education-credit/6fcec5c5af")))
                 graph.add((course_uri, ELM.creditPoint, credit))
 
+        if course.get("teachingLanguage"):
+            lang_uri = language_tag_to_uri(course.get("teachingLanguage"))
+            if isinstance(lang_uri, URIRef):
+                graph.add((course_uri, DCTERMS.language, lang_uri))
+
         # Offerings of this course
 
         for offering in offerings:
@@ -217,14 +224,10 @@ class EduApiDataSource(DataSourceType):
                 if description:
                     graph.add((offering_uri, DCTERMS.description, Literal(description, lang="en")))
 
-            """
             if offering.get("teachingLanguage"):
-                lang_code = offering.get("teachingLanguage")
-                if isinstance(lang_code, str):
-                    graph.add((offering_uri, DCTERMS.language, URIRef(
-                        f"http://publications.europa.eu/resource/authority/language/{lang_code.upper()}"
-                    )))
-            """
+                lang_uri = language_tag_to_uri(offering.get("teachingLanguage"))
+                if isinstance(lang_uri, URIRef):
+                    graph.add((offering_uri, DCTERMS.language, lang_uri))
 
             if offering.get("startDate") or offering.get("endDate") or offering.get("academicSessionCode"):
                 temporal = BNode()
