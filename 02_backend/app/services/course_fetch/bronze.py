@@ -82,11 +82,14 @@ def list_sources_with_bronze(
     db: Session,
     provider_uuid: Optional[UUID] = None,
 ) -> list[Dict[str, Any]]:
-    """Enumerate sources that have at least one bronze file in the ledger.
+    """Enumerate sources that have at least one bronze file in the ledger
+    AND belong to their provider's latest source_version.
 
     Picks the single most-recent transaction row per source (so the
     returned `source_version_uuid` points at the version that produced the
-    latest bronze). Optionally filters by provider.
+    latest bronze). Sources attached to an outdated source_version are
+    excluded — re-silvering them would reuse stale manifest data.
+    Optionally filters by provider.
     """
     params: Dict[str, Any] = {}
     where = ["t.bronze_file_path IS NOT NULL"]
@@ -97,11 +100,19 @@ def list_sources_with_bronze(
 
     rows = db.execute(
         text(f"""
+            WITH latest_version AS (
+                SELECT DISTINCT ON (provider_uuid)
+                       provider_uuid, source_version_uuid
+                FROM source_version
+                ORDER BY provider_uuid, version_date DESC, version_id DESC
+            )
             SELECT DISTINCT ON (t.source_uuid)
                    t.source_uuid, t.provider_uuid, t.source_version_uuid,
                    s.source_name, s.source_type
             FROM transaction t
             JOIN source s ON s.source_uuid = t.source_uuid
+            JOIN latest_version lv
+              ON lv.source_version_uuid = s.source_version_uuid
             WHERE {where_sql}
             ORDER BY t.source_uuid, t.created_at_date DESC, t.run_number DESC
         """),
