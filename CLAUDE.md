@@ -137,3 +137,13 @@ Copy `.example.env` to `.env`. Required: `POSTGRES_PASSWORD`, `MINIO_ROOT_USER`,
 
 - `main` — production branch (PR target)
 - `development` — active development branch
+
+## Reference data (`reference/`)
+
+This directory is not commited to the repository, but holds local copies of key external reference data:
+
+- `qualitylink-profile.ttl`: the QualityLink application profile as SHACL constraints
+- `LOQ-constraints.rdf` and `LOQ-constraints-mdr.rdf`: the ELM application profile Learning Opportunities and Qualifications (LOQ)
+- `edu-api-v1.json`: the Edu-API 1.0 spec
+- `ooapi-v6.yaml`: the OOAPI v6 spec
+

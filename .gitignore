@@ -1,3 +1,6 @@
+# reference data (local copies)
+reference/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
