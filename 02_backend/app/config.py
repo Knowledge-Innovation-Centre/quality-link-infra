@@ -47,6 +47,7 @@ DEFAULT_VOCABULARIES = [
     {   "scheme": "http://data.europa.eu/snb/eqf/25831c2" },                      # EQF levels
     {   "scheme": "http://data.europa.eu/snb/learning-opportunity/25831c2" },     # Learning opportunity type
     {   "scheme": "http://data.europa.eu/snb/learning-assessment/25831c2" },      # Mode of learning and assessment
+    {   "scheme": "http://data.europa.eu/snb/learning-schedule/25831c2" },        # Learning schedule (part-time/full-time)
     {   "scheme": "http://publications.europa.eu/resource/authority/country" },   # Countries and territories
 ]
 

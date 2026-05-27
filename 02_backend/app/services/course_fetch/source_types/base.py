@@ -1,9 +1,83 @@
-from typing import Dict
-
+import logging
+import re
 import uuid
+from typing import Dict, Optional
 
 import requests
-from rdflib import URIRef, Literal
+from rdflib import BNode, Graph, Literal, Namespace, URIRef
+from rdflib.namespace import RDF, SKOS, XSD
+
+logger = logging.getLogger(__name__)
+
+ELM = Namespace("http://data.europa.eu/snb/model/elm/")
+ADMS = Namespace("http://www.w3.org/ns/adms#")
+
+
+# ---------------------------------------------------------------------------
+# EU vocabulary URI stubs
+#
+# Each function turns a simple code into the URI used by an EU controlled
+# vocabulary. Kept as named helpers so the base path or behaviour can be
+# changed in one place (e.g. swap to a lookup against a cached vocab).
+# ---------------------------------------------------------------------------
+
+_DIGITS_2_6_RE = re.compile(r"^\d{2,6}$")
+
+
+def _normalize_isced(code: str) -> Optional[str]:
+    """Return the 2–4 digit ISCED-F 2013 form of `code`.
+
+    SOI2021 (Dutch) extensions are 4-digit ISCED-F + 2 narrowing digits,
+    so 5–6 digit codes are truncated to their 4-digit ISCED-F parent.
+    Returns None if the input is not 2–6 all-digits.
+    """
+    if not isinstance(code, str) or not _DIGITS_2_6_RE.match(code):
+        return None
+    return code[:4]
+
+
+def isced_f_code_to_uri(code: str) -> Optional[URIRef]:
+    """Map an ISCED-F 2013 (or SOI2021-extended) code to its EU snb URI."""
+    base = _normalize_isced(code)
+    if base is None:
+        return None
+    return URIRef(f"http://data.europa.eu/snb/isced-f/{base}")
+
+
+def country_code_to_uri(code: str) -> Optional[URIRef]:
+    """Map an ISO 3166 alpha-2 or alpha-3 country code to its EU authority URI."""
+    if not isinstance(code, str) or not code:
+        return None
+    return URIRef(f"http://publications.europa.eu/resource/authority/country/{code.upper()}")
+
+
+def currency_code_to_uri(code: str) -> Optional[URIRef]:
+    """Map an ISO 4217 currency code to its EU authority URI."""
+    if not isinstance(code, str) or not code:
+        return None
+    return URIRef(f"http://publications.europa.eu/resource/authority/currency/{code.upper()}")
+
+
+def org_uuid_from_value(value, owner: Optional[str] = None) -> Optional[str]:
+    """Return a normalized UUID string from a value that should already be a UUID.
+
+    `owner` is an optional identifier of the carrying object, used only in the
+    warning log when the value is not a UUID.
+    """
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        return str(uuid.UUID(value))
+    except ValueError:
+        logger.warning("Invalid organization UUID %r on %s", value, owner)
+        return None
+
+
+def get_date_datatype(value: str):
+    """Pick XSD.dateTime vs XSD.date based on whether `value` is RFC3339 date-time."""
+    if isinstance(value, str) and "T" in value:
+        return XSD.dateTime
+    return XSD.date
 
 
 class DataSourceType:
@@ -94,3 +168,22 @@ class DataSourceType:
             graph.add((subject, predicate, mapping[source_dict[key]]))
 
 
+    def _add_identifier(
+        self,
+        graph: Graph,
+        subject: URIRef,
+        code,
+        scheme_name=None,
+        scheme_id: Optional[URIRef] = None,
+    ) -> None:
+        """Attach an adms:identifier elm:Identifier blank node to `subject`."""
+        if code is None or code == "":
+            return
+        ident = BNode()
+        graph.add((ident, RDF.type, ELM.Identifier))
+        graph.add((ident, SKOS.notation, Literal(str(code))))
+        if scheme_name:
+            graph.add((ident, ELM.schemeName, Literal(str(scheme_name))))
+        if scheme_id is not None:
+            graph.add((ident, ELM.schemeId, scheme_id))
+        graph.add((subject, ADMS.identifier, ident))
