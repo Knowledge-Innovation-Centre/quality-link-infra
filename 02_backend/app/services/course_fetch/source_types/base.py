@@ -1,7 +1,7 @@
 import logging
 import re
 import uuid
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 
 import requests
 from rdflib import BNode, Graph, Literal, Namespace, URIRef
@@ -150,6 +150,27 @@ class DataSourceType:
             return uuid.UUID(source_id)
         except ValueError:
             return uuid.uuid5(uuid.NAMESPACE_URL, str(uri))
+
+
+    def extract_english_value(self, multilingual_field: Any) -> str:
+        """Pull the English value out of a multilingual field.
+
+        Accepts a plain string, or a list of `{language, value}` dicts (the
+        shape both OOAPI and Edu-API use). Falls back to the first entry's
+        value if no English-tagged entry is found.
+        """
+        if isinstance(multilingual_field, str):
+            return multilingual_field
+        if not isinstance(multilingual_field, list) or not multilingual_field:
+            return ""
+        for item in multilingual_field:
+            if isinstance(item, dict):
+                lang = item.get("language", "").lower()
+                if "en" in lang:
+                    return item.get("value", "")
+        if isinstance(multilingual_field[0], dict):
+            return multilingual_field[0].get("value", "")
+        return str(multilingual_field[0])
 
 
     def _value_to_literal(self, source_dict, key, graph, subject, predicate, datatype = None, lang = None):

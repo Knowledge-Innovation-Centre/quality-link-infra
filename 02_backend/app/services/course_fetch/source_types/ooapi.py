@@ -143,20 +143,6 @@ class OoapiDataSource(DataSourceType):
         )
         return graph.serialize(format="turtle", encoding="utf-8"), "text/turtle"
 
-    def extract_english_value(self, multilingual_field: Any) -> str:
-        if isinstance(multilingual_field, str):
-            return multilingual_field
-        if not isinstance(multilingual_field, list) or not multilingual_field:
-            return ""
-        for item in multilingual_field:
-            if isinstance(item, dict):
-                lang = item.get("language", "").lower()
-                if "en" in lang:
-                    return item.get("value", "")
-        if isinstance(multilingual_field[0], dict):
-            return multilingual_field[0].get("value", "")
-        return str(multilingual_field[0])
-
     # --- helpers -------------------------------------------------------
 
     def _add_identifier_entry(self, graph: Graph, subject: URIRef, entry: Any) -> None:
