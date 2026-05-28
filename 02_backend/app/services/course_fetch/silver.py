@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 
 from config import MINIO_BUCKET_NAME, GRAPH_COURSES, GRAPH_REFERENCE
 from services import fuseki
+from services.course_fetch import skilldata
 
 logger = logging.getLogger(__name__)
 
@@ -89,6 +90,7 @@ def _enrich_rdf_graph(
     file_content: bytes, file_format: str,
     provider_uuid: str, provider_uri: Optional[str],
     same_as_map: Dict[str, str],
+    session: requests.Session,
 ) -> Tuple[List[Dict[str, str]], Optional[Graph]]:
     """Parse, enrich in place, return (courses, graph) where each course is a
     {"uuid": str, "uri": str} dict."""
@@ -204,6 +206,12 @@ def _enrich_rdf_graph(
             for loi in graph.subjects(ELM.learningAchievementSpecification, los_uri):
                 graph.add((los_uri, ELM.learningOpportunity, loi))
 
+        if skilldata.is_configured():
+            for los_uri in los_subjects:
+                skilldata.enrich_course_with_skilldata(graph, los_uri, session=session)
+        else:
+            logger.info("skilldata: disabled (SKILLDATA_API_URL not set)")
+
         logger.info(
             "Enriched: %s LOS, %s LOI, %s courses, %s triples",
             len(los_subjects), len(loi_subjects), len(courses), len(graph),
@@ -254,7 +262,7 @@ def enrich_silver(
     logger.info("Loaded %s owl:sameAs mappings", len(same_as_map))
 
     courses, enriched_graph = _enrich_rdf_graph(
-        file_content, file_format, provider_uuid, provider_uri, same_as_map
+        file_content, file_format, provider_uuid, provider_uri, same_as_map, session
     )
     if enriched_graph is None:
         return None

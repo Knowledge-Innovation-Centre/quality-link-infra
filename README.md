@@ -36,7 +36,7 @@ The QualityLink project has been funded by the European Union. Views and opinion
 QL-Pipeline provides:
 - **Provider registry** seeded from the DEQAR API and stored in PostgreSQL
 - **Discovery of data source** manifests via DNS TXT records and `.well-known` URLs
-- **ETL pipeline** (bronze → silver → gold) running in-process in the backend
+- **ETL pipeline** (bronze → silver → gold) running in-process in the backend, with optional AI enrichment in silver (Skilldata `analyze_course` API) to back-fill learning outcomes, ESCO skill matches, ISCED-F and language
 - **RDF storage** in Jena Fuseki with three named graphs (courses, reference, vocabulary)
 - **Full-text search** via Meilisearch
 - **Data lake** in MinIO for raw source snapshots
@@ -152,6 +152,13 @@ MINIO_BUCKET_NAME=quality-link-storage
 FUSEKI_DATASET_NAME=qualitylink
 MEILISEARCH_INDEX=ql_courses
 DEQAR_API_URL=https://backend.testzone.eqar.eu/connectapi/v1/providers/
+
+# Skilldata API (silver-stage AI enrichment) — disabled unless SKILLDATA_API_URL is set
+SKILLDATA_API_URL=
+SKILLDATA_API_KEY=                 # optional; sent as the Kic-Api-Header when present
+SKILLDATA_API_TIMEOUT=60
+SKILLDATA_SKILL_LIMIT=5
+SKILLDATA_MAX_DISTANCE=0.3
 ```
 
 The backend also accepts overrides for the three Fuseki graph IRIs and the default controlled-vocabulary scheme URIs; see `02_backend/app/config.py`.
