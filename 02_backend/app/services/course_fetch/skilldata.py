@@ -4,7 +4,9 @@ Calls `POST {SKILLDATA_API_URL}/lo_generator/analyze_course` per LOS to
 back-fill missing predicates required by the QL profile (`elm:learningOutcome`,
 `elm:ISCEDFCode`, `dcterms:language`) and attach `elm:relatedESCOSkill` matches
 to learning outcomes. Predicates already present in the source data are never
-overwritten — the API result only fills gaps.
+overwritten — the API result only fills gaps. The one exception: when the
+source supplies a single learning outcome, the generated outcomes replace it
+and the original wording is preserved as `elm:learningOutcomeSummary`.
 
 Each AI-populated predicate is recorded once on the course as
 `ql:aiEnrichedField <predicate-uri>` so downstream consumers can tell which
@@ -189,6 +191,26 @@ def _add_esco_skills(graph: Graph, lo_node, skills: List[Dict[str, Any]]) -> boo
     return added
 
 
+def _replace_single_outcome_with_summary(
+    graph: Graph, course_uri: URIRef, lo_node, text: str
+) -> None:
+    """Drop a source learning outcome, keeping its text as a summary note.
+
+    Used when the source supplied a single learning outcome that we replaced
+    with AI-generated ones: the original wording is preserved as
+    `elm:learningOutcomeSummary` rather than discarded.
+    """
+    graph.remove((course_uri, ELM.learningOutcome, lo_node))
+    for note in list(graph.objects(lo_node, ELM.additionalNote)):
+        graph.remove((note, None, None))
+    graph.remove((lo_node, None, None))
+
+    note = BNode()
+    graph.add((note, RDF.type, ELM.Note))
+    graph.add((note, ELM.noteLiteral, Literal(text, lang="en")))
+    graph.add((course_uri, ELM.learningOutcomeSummary, note))
+
+
 def _apply_response(
     graph: Graph,
     course_uri: URIRef,
@@ -202,6 +224,7 @@ def _apply_response(
     # ESCO skill matching — modes 1 and 2
     skills_added = False
     if mode == "description_only":
+        added_outcome = False
         for entry in response_outcomes:
             if not isinstance(entry, dict):
                 continue
@@ -213,8 +236,16 @@ def _apply_response(
             graph.add((lo, DCTERMS.title, Literal(text.strip(), lang="en")))
             graph.add((course_uri, ELM.learningOutcome, lo))
             enriched_fields.add(ELM.learningOutcome)
+            added_outcome = True
             if _add_esco_skills(graph, lo, entry.get("skills") or []):
                 skills_added = True
+        # The source had a single outcome that we just replaced with generated
+        # ones; keep its original wording as a summary instead of dropping it.
+        if added_outcome and len(existing_outcomes) == 1:
+            lo_node, original_text = existing_outcomes[0]
+            _replace_single_outcome_with_summary(
+                graph, course_uri, lo_node, original_text
+            )
     elif mode == "description_and_outcomes":
         for idx, entry in enumerate(response_outcomes):
             if not isinstance(entry, dict) or idx >= len(existing_outcomes):
