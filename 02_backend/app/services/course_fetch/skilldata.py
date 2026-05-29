@@ -11,6 +11,7 @@ Each AI-populated predicate is recorded once on the course as
 parts came from the source and which from the AI tool.
 """
 import logging
+import textwrap
 from typing import Any, Dict, List, Optional, Tuple
 
 import requests
@@ -49,7 +50,7 @@ def _english_literal(graph: Graph, subject, predicate) -> Optional[str]:
     fallback: Optional[str] = None
     for obj in graph.objects(subject, predicate):
         if isinstance(obj, Literal):
-            if obj.language == "en":
+            if isinstance(obj.language, str) and obj.language.lower() == "en":
                 return str(obj)
             if fallback is None and (obj.language is None or obj.language == ""):
                 fallback = str(obj)
@@ -259,6 +260,10 @@ def enrich_course_with_skilldata(
     try:
         mode, existing = _pick_mode(graph, course_uri)
         input_text = _assemble_input_text(graph, course_uri, existing)
+        logger.debug(
+            "skilldata: %s - input text:\n%s",
+            course_uri, textwrap.indent(input_text, ' | '),
+        )
         if len(input_text) < _MIN_INPUT_LEN:
             logger.info(
                 "skilldata: %s — skipped (input text < %s chars)",
