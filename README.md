@@ -4,11 +4,25 @@ A data integration platform that discovers, transforms, and indexes data on lear
 
 This software implements the [technical specifications](https://quality-link.eu/technical-specs/) developed as part of the [QualityLink project](https://quality-link.eu/) as a pilot version and technology demonstrator.
 
-The aggregator supports data sources using the following standards:
+The aggregator supports the [.well-known](https://specs.quality-link.eu/discovery.html#discovery-well-known) and the [DNS TXT record](https://specs.quality-link.eu/discovery.html#discovery-dns) discovery methods.
 
-- [ELM](https://europa.eu/europass/elm-browser/index.html), version 3
-- [OOAPI](https://openonderwijsapi.nl/#/), version 5
-- [Edu-API](https://www.1edtech.org/standards/edu-api), version 1.0
+The following data sources are supported:
+
+| Data source type | Supported versions |
+|:-----------------|:-------------------|
+| [ELM](https://europa.eu/europass/elm-browser/index.html) | v3 |
+| [OOAPI](https://openonderwijsapi.nl/#/) | v5 & v6 |
+| [Edu-API](https://www.1edtech.org/standards/edu-api) | v1 |
+| [OCCAPI](https://occapi.uni-foundation.eu/specification/v2) | *work in progress* |
+
+The aggregator currently supports the following access control methods:
+
+| Method  | Status | Notes |
+|:--------|:-------|:------|
+| [IP address](https://specs.quality-link.eu/data_exchange.html#access-control-ip) | supported | aggregator runs on IP 63.179.152.42 |
+| [HTTP request header](https://specs.quality-link.eu/data_exchange.html#access-control-header) | supported | encrypted secret in manifest file |
+| [OAuth 2.0](https://specs.quality-link.eu/data_exchange.html#access-control-oauth) | supported | client secret: out of band or encrypted in manifest file |
+| [HTTP Signature](https://specs.quality-link.eu/data_exchange.html#access-control-http-sig) | on hold | |
 
 The deployment of the pilot version for the project can be found at:
 
