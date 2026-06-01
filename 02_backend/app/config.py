@@ -31,6 +31,12 @@ DEQAR_API_URL = os.getenv(
     "DEQAR_API_URL", "https://backend.testzone.eqar.eu/connectapi/v1/providers/"
 )
 
+SKILLDATA_API_URL = os.getenv("SKILLDATA_API_URL")
+SKILLDATA_API_KEY = os.getenv("SKILLDATA_API_KEY")
+SKILLDATA_API_TIMEOUT = int(os.getenv("SKILLDATA_API_TIMEOUT", "60"))
+SKILLDATA_SKILL_LIMIT = int(os.getenv("SKILLDATA_SKILL_LIMIT", "5"))
+SKILLDATA_MAX_DISTANCE = float(os.getenv("SKILLDATA_MAX_DISTANCE", "0.3"))
+
 GRAPH_COURSES = "http://data.quality-link.eu/graph/courses"
 GRAPH_REFERENCE = "http://data.quality-link.eu/graph/reference"
 GRAPH_VOCABULARY = "http://data.quality-link.eu/graph/vocabulary"
@@ -47,6 +53,7 @@ DEFAULT_VOCABULARIES = [
     {   "scheme": "http://data.europa.eu/snb/eqf/25831c2" },                      # EQF levels
     {   "scheme": "http://data.europa.eu/snb/learning-opportunity/25831c2" },     # Learning opportunity type
     {   "scheme": "http://data.europa.eu/snb/learning-assessment/25831c2" },      # Mode of learning and assessment
+    {   "scheme": "http://data.europa.eu/snb/learning-schedule/25831c2" },        # Learning schedule (part-time/full-time)
     {   "scheme": "http://publications.europa.eu/resource/authority/country" },   # Countries and territories
 ]
 

@@ -49,6 +49,12 @@
         "elm:ISCEDFCode": {
             "@type": "@id"
         },
+        "ISCEDFBroadField": {
+            "@type": "@id"
+        },
+        "ISCEDFNarrowField": {
+            "@type": "@id"
+        },
         "dcterms:language": {
             "@type": "@id"
         },
@@ -85,6 +91,14 @@
         "skos:prefLabel": {}
     },
     "elm:ISCEDFCode": {
+        "@explicit": true,
+        "skos:prefLabel": {}
+    },
+    "ISCEDFBroadField": {
+        "@explicit": true,
+        "skos:prefLabel": {}
+    },
+    "ISCEDFNarrowField": {
         "@explicit": true,
         "skos:prefLabel": {}
     },

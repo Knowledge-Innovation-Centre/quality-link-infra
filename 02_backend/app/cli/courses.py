@@ -204,8 +204,18 @@ def courses_silver(
     all_: bool = typer.Option(
         False, "--all", help="Re-silver every source that has a bronze file",
     ),
+    no_reindex: bool = typer.Option(
+        False, "--no-reindex",
+        help="Skip the Meilisearch reindex (gold) step. By default, silver is "
+             "followed by a reindex of the produced courses.",
+    ),
 ) -> None:
-    """Re-run the silver stage from each source's latest bronze file on disk."""
+    """Re-run the silver stage from each source's latest bronze file on disk.
+
+    `--all` and the provider-scoped form consider only sources attached to
+    their provider's latest source_version. `--source <UUID>` is an explicit
+    override and re-silvers that source regardless of version freshness.
+    """
     if not any([provider, source_uuid, all_]):
         _die("Specify one of PROVIDER, --source, or --all")
     if all_ and (provider or source_uuid):
@@ -245,18 +255,24 @@ def courses_silver(
         console.print("[yellow]No matching sources with a bronze file on record.[/yellow]")
         raise typer.Exit(code=2)
 
-    table = Table(title=f"Silver re-run — {len(targets)} source(s)")
+    reindex = not no_reindex
+    suffix = "" if reindex else " (no reindex)"
+    table = Table(title=f"Silver re-run{suffix} — {len(targets)} source(s)")
     table.add_column("Source")
     table.add_column("Type")
     table.add_column("Status")
     table.add_column("Courses", justify="right")
+    if reindex:
+        table.add_column("Reindexed", justify="right")
     table.add_column("Bronze file")
 
     succeeded = 0
+    reindex_uploaded_total = 0
+    reindex_failed_total = 0
     for t in targets:
         label = t.get("source_name") or t["source_uuid"]
         console.print(f"[cyan]silver[/cyan] {label} ({t['source_uuid']})...")
-        res = run_silver_only(UUID(t["source_uuid"]))
+        res = run_silver_only(UUID(t["source_uuid"]), reindex=reindex)
         if res["status"] == "success":
             succeeded += 1
             status_cell = "[green]success[/green]"
@@ -265,16 +281,31 @@ def courses_silver(
         else:
             msg = res.get("error") or "failed"
             status_cell = f"[red]{msg}[/red]"
-        table.add_row(
+        row = [
             label,
             t.get("source_type") or "-",
             status_cell,
             str(res.get("course_count") or 0),
-            res.get("bronze_file_path") or "-",
-        )
+        ]
+        if reindex:
+            uploaded = res.get("reindex_uploaded") or 0
+            failed = res.get("reindex_failed") or 0
+            reindex_uploaded_total += uploaded
+            reindex_failed_total += failed
+            cell = str(uploaded)
+            if failed:
+                cell = f"{uploaded} [red]({failed} failed)[/red]"
+            row.append(cell)
+        row.append(res.get("bronze_file_path") or "-")
+        table.add_row(*row)
 
     console.print(table)
     console.print(f"\nRe-silvered {succeeded}/{len(targets)} source(s).")
+    if reindex:
+        msg = f"Reindexed {reindex_uploaded_total} course(s)."
+        if reindex_failed_total:
+            msg += f" [red]{reindex_failed_total} failed.[/red]"
+        console.print(msg)
 
 
 @courses_app.command("reindex")

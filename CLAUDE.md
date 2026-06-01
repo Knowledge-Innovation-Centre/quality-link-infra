@@ -48,7 +48,7 @@ Concurrency control uses **Postgres advisory locks** (`services/locks.py`), not 
 `run_course_fetch(provider, version, source, path)` opens its own `SessionLocal` (it runs in a `BackgroundTask` after the HTTP response is sent, so it must not reuse the request session):
 
 1. **Bronze** — fetch raw data from the provider source, write to MinIO at `{bucket}/courses/{provider_uuid}/{source_version_uuid}/{source_uuid}/{YYYY-MM-DD}/...`.
-2. **Silver** — parse into an RDF graph, enrich against the reference graph, upload to Fuseki's courses graph.
+2. **Silver** — parse into an RDF graph, enrich against the reference graph, and (when `SKILLDATA_API_URL` is set) call the Skilldata `analyze_course` API per course to fill missing learning outcomes / ESCO skills / ISCED-F / language; AI-populated predicates are recorded as `ql:aiEnrichedField`. Upload to Fuseki's courses graph.
 3. **Gold** — SPARQL → JSON-LD frame (`schema/frame.json`) → flat docs → Meilisearch index.
 4. Log a row in `transaction` (unique per provider+version+date).
 
@@ -137,3 +137,13 @@ Copy `.example.env` to `.env`. Required: `POSTGRES_PASSWORD`, `MINIO_ROOT_USER`,
 
 - `main` — production branch (PR target)
 - `development` — active development branch
+
+## Reference data (`reference/`)
+
+This directory is not commited to the repository, but holds local copies of key external reference data:
+
+- `qualitylink-profile.ttl`: the QualityLink application profile as SHACL constraints
+- `LOQ-constraints.rdf` and `LOQ-constraints-mdr.rdf`: the ELM application profile Learning Opportunities and Qualifications (LOQ)
+- `edu-api-v1.json`: the Edu-API 1.0 spec
+- `ooapi-v6.yaml`: the OOAPI v6 spec
+

@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 
 from config import MINIO_BUCKET_NAME, GRAPH_COURSES, GRAPH_REFERENCE
 from services import fuseki
+from services.course_fetch import skilldata
 
 logger = logging.getLogger(__name__)
 
@@ -66,6 +67,25 @@ def _extract_subgraph(graph: Graph, root: URIRef) -> Graph:
     return sub
 
 
+def _truncated_isced_f(code, length: int):
+    """Truncate an elm:ISCEDFCode value to `length` digits, preserving its kind.
+
+    `code` is the ISCED-F detailed-field code as it appears in the graph: either
+    a URIRef ending in the digits (e.g. .../isced-f/0613) or a digit Literal.
+    Returns a value of the same kind with the code truncated (URI prefix kept),
+    or None when it is not an all-digit code of at least `length` digits.
+    """
+    if isinstance(code, URIRef):
+        prefix, _, tail = str(code).rpartition("/")
+        if tail.isdigit() and len(tail) >= length:
+            return URIRef(f"{prefix}/{tail[:length]}")
+    elif isinstance(code, Literal):
+        tail = str(code).strip()
+        if tail.isdigit() and len(tail) >= length:
+            return Literal(tail[:length])
+    return None
+
+
 def _fetch_same_as_map(session: requests.Session) -> Dict[str, str]:
     query = f"""
 PREFIX owl: <{OWL}>
@@ -89,6 +109,7 @@ def _enrich_rdf_graph(
     file_content: bytes, file_format: str,
     provider_uuid: str, provider_uri: Optional[str],
     same_as_map: Dict[str, str],
+    session: requests.Session,
 ) -> Tuple[List[Dict[str, str]], Optional[Graph]]:
     """Parse, enrich in place, return (courses, graph) where each course is a
     {"uuid": str, "uri": str} dict."""
@@ -204,6 +225,21 @@ def _enrich_rdf_graph(
             for loi in graph.subjects(ELM.learningAchievementSpecification, los_uri):
                 graph.add((los_uri, ELM.learningOpportunity, loi))
 
+        if skilldata.is_configured():
+            for los_uri in los_subjects:
+                skilldata.enrich_course_with_skilldata(graph, los_uri, session=session)
+        else:
+            logger.info("skilldata: disabled (SKILLDATA_API_URL not set)")
+
+        # derive ISCED-F broad (2-digit) and narrow (3-digit) fields from
+        # elm:ISCEDFCode — after skilldata, which may have populated it
+        for los_uri in los_subjects:
+            for code in graph.objects(los_uri, ELM.ISCEDFCode):
+                if (broad := _truncated_isced_f(code, 2)) is not None:
+                    graph.add((los_uri, QL.ISCEDFBroadField, broad))
+                if (narrow := _truncated_isced_f(code, 3)) is not None:
+                    graph.add((los_uri, QL.ISCEDFNarrowField, narrow))
+
         logger.info(
             "Enriched: %s LOS, %s LOI, %s courses, %s triples",
             len(los_subjects), len(loi_subjects), len(courses), len(graph),
@@ -254,7 +290,7 @@ def enrich_silver(
     logger.info("Loaded %s owl:sameAs mappings", len(same_as_map))
 
     courses, enriched_graph = _enrich_rdf_graph(
-        file_content, file_format, provider_uuid, provider_uri, same_as_map
+        file_content, file_format, provider_uuid, provider_uri, same_as_map, session
     )
     if enriched_graph is None:
         return None

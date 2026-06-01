@@ -4,11 +4,25 @@ A data integration platform that discovers, transforms, and indexes data on lear
 
 This software implements the [technical specifications](https://quality-link.eu/technical-specs/) developed as part of the [QualityLink project](https://quality-link.eu/) as a pilot version and technology demonstrator.
 
-The aggregator supports data sources using the following standards:
+The aggregator supports the [.well-known](https://specs.quality-link.eu/discovery.html#discovery-well-known) and the [DNS TXT record](https://specs.quality-link.eu/discovery.html#discovery-dns) discovery methods.
 
-- [ELM](https://europa.eu/europass/elm-browser/index.html), version 3
-- [OOAPI](https://openonderwijsapi.nl/#/), version 5
-- [Edu-API](https://www.1edtech.org/standards/edu-api), version 1.0
+The following data sources are supported:
+
+| Data source type | Supported versions |
+|:-----------------|:-------------------|
+| [ELM](https://europa.eu/europass/elm-browser/index.html) | v3 |
+| [OOAPI](https://openonderwijsapi.nl/#/) | v5 & v6 |
+| [Edu-API](https://www.1edtech.org/standards/edu-api) | v1 |
+| [OCCAPI](https://occapi.uni-foundation.eu/specification/v2) | *work in progress* |
+
+The aggregator currently supports the following access control methods:
+
+| Method  | Status | Notes |
+|:--------|:-------|:------|
+| [IP address](https://specs.quality-link.eu/data_exchange.html#access-control-ip) | supported | aggregator runs on IP 63.179.152.42 |
+| [HTTP request header](https://specs.quality-link.eu/data_exchange.html#access-control-header) | supported | encrypted secret in manifest file |
+| [OAuth 2.0](https://specs.quality-link.eu/data_exchange.html#access-control-oauth) | supported | client secret: out of band or encrypted in manifest file |
+| [HTTP Signature](https://specs.quality-link.eu/data_exchange.html#access-control-http-sig) | on hold | |
 
 The deployment of the pilot version for the project can be found at:
 
@@ -36,7 +50,7 @@ The QualityLink project has been funded by the European Union. Views and opinion
 QL-Pipeline provides:
 - **Provider registry** seeded from the DEQAR API and stored in PostgreSQL
 - **Discovery of data source** manifests via DNS TXT records and `.well-known` URLs
-- **ETL pipeline** (bronze → silver → gold) running in-process in the backend
+- **ETL pipeline** (bronze → silver → gold) running in-process in the backend, with optional AI enrichment in silver (Skilldata `analyze_course` API) to back-fill learning outcomes, ESCO skill matches, ISCED-F and language
 - **RDF storage** in Jena Fuseki with three named graphs (courses, reference, vocabulary)
 - **Full-text search** via Meilisearch
 - **Data lake** in MinIO for raw source snapshots
@@ -152,6 +166,13 @@ MINIO_BUCKET_NAME=quality-link-storage
 FUSEKI_DATASET_NAME=qualitylink
 MEILISEARCH_INDEX=ql_courses
 DEQAR_API_URL=https://backend.testzone.eqar.eu/connectapi/v1/providers/
+
+# Skilldata API (silver-stage AI enrichment) — disabled unless SKILLDATA_API_URL is set
+SKILLDATA_API_URL=
+SKILLDATA_API_KEY=                 # optional; sent as the Kic-Api-Header when present
+SKILLDATA_API_TIMEOUT=60
+SKILLDATA_SKILL_LIMIT=5
+SKILLDATA_MAX_DISTANCE=0.3
 ```
 
 The backend also accepts overrides for the three Fuseki graph IRIs and the default controlled-vocabulary scheme URIs; see `02_backend/app/config.py`.

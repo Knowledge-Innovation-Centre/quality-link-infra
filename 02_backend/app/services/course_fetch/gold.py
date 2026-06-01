@@ -114,11 +114,13 @@ WHERE {{
     return courses
 
 
-def index_gold(session: requests.Session, courses: List[Dict[str, str]]) -> None:
-    """Upsert each course into Meilisearch. Counts are logged."""
+def index_gold(
+    session: requests.Session, courses: List[Dict[str, str]]
+) -> tuple[int, int]:
+    """Upsert each course into Meilisearch. Returns (uploaded, failed)."""
     if not courses:
         logger.info("Gold: nothing to index")
-        return
+        return 0, 0
 
     uploaded = 0
     failed = 0
@@ -129,3 +131,4 @@ def index_gold(session: requests.Session, courses: List[Dict[str, str]]) -> None
             failed += 1
 
     logger.info("Gold: uploaded=%s failed=%s", uploaded, failed)
+    return uploaded, failed

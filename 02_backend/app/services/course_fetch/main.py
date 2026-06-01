@@ -1,5 +1,6 @@
 import io
 import logging
+import threading
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from io import BytesIO
@@ -34,11 +35,19 @@ def _capture_logs() -> Iterator[io.StringIO]:
     forced to INFO for the duration — otherwise CLI runs (which never call
     logging.basicConfig) inherit the root WARNING level and drop INFO records
     before they ever reach the handler.
+
+    Each run executes on its own thread (sync FastAPI BackgroundTask in the
+    threadpool), but the parent logger is shared, so overlapping runs each
+    attach a handler to it. A thread-id filter keeps every handler scoped to
+    its own run — without it, every buffer would capture every concurrent
+    run's records.
     """
     buf = io.StringIO()
     handler = logging.StreamHandler(buf)
     handler.setFormatter(_LOG_FORMATTER)
     handler.setLevel(logging.DEBUG)
+    run_thread_id = threading.get_ident()
+    handler.addFilter(lambda record: record.thread == run_thread_id)
     parent = logging.getLogger("services.course_fetch")
     previous_level = parent.level
     parent.setLevel(logging.INFO)
@@ -150,18 +159,23 @@ def run_course_fetch(
                 )
 
 
-def run_silver_only(source_uuid: UUID) -> dict:
+def run_silver_only(source_uuid: UUID, reindex: bool = True) -> dict:
     """Re-run the silver stage for a source using its most recent bronze file.
 
     Mirrors `run_course_fetch`'s orchestration (advisory lock, transaction
-    ledger, log capture) but skips bronze and gold. The new transaction row's
+    ledger, log capture) but skips bronze. The new transaction row's
     `bronze_file_path` is set to the reused MinIO path so the ledger tells you
     exactly which file silver ran on.
 
+    When `reindex` is True (default), the gold stage runs after a successful
+    silver, upserting the produced courses into Meilisearch.
+
     Returns {status, source_uuid, provider_uuid, source_version_uuid,
-    bronze_file_path, course_count, error}.
+    bronze_file_path, course_count, reindex_uploaded, reindex_failed, error}.
     """
-    logger.info("course_fetch (silver-only): source=%s", source_uuid)
+    logger.info(
+        "course_fetch (silver-only): source=%s reindex=%s", source_uuid, reindex,
+    )
     minio_client = get_minio_client()
 
     result: dict = {
@@ -171,6 +185,8 @@ def run_silver_only(source_uuid: UUID) -> dict:
         "source_version_uuid": None,
         "bronze_file_path": None,
         "course_count": 0,
+        "reindex_uploaded": 0,
+        "reindex_failed": 0,
         "error": None,
     }
 
@@ -220,6 +236,11 @@ def run_silver_only(source_uuid: UUID) -> dict:
                     result["course_count"] = len(courses)
                     if trans_uuid:
                         update_transaction(db, trans_uuid, course_count=len(courses))
+
+                    if reindex:
+                        uploaded, failed = index_gold(http, courses)
+                        result["reindex_uploaded"] = uploaded
+                        result["reindex_failed"] = failed
 
                     status_val = "success"
                 except Exception as e:
