@@ -1,5 +1,6 @@
 import io
 import logging
+import threading
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from io import BytesIO
@@ -34,11 +35,19 @@ def _capture_logs() -> Iterator[io.StringIO]:
     forced to INFO for the duration — otherwise CLI runs (which never call
     logging.basicConfig) inherit the root WARNING level and drop INFO records
     before they ever reach the handler.
+
+    Each run executes on its own thread (sync FastAPI BackgroundTask in the
+    threadpool), but the parent logger is shared, so overlapping runs each
+    attach a handler to it. A thread-id filter keeps every handler scoped to
+    its own run — without it, every buffer would capture every concurrent
+    run's records.
     """
     buf = io.StringIO()
     handler = logging.StreamHandler(buf)
     handler.setFormatter(_LOG_FORMATTER)
     handler.setLevel(logging.DEBUG)
+    run_thread_id = threading.get_ident()
+    handler.addFilter(lambda record: record.thread == run_thread_id)
     parent = logging.getLogger("services.course_fetch")
     previous_level = parent.level
     parent.setLevel(logging.INFO)
