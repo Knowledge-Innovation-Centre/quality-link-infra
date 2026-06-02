@@ -59,67 +59,62 @@ def replace_subject_in_graph(
         alias_nt = ""
 
     if alias_replace:
-        alias_delete = "?alias owl:sameAs ?root ."
-        alias_where = "OPTIONAL { ?alias owl:sameAs ?root . }"
+        alias_delete = f"""
+WITH <{graph_uri}>
+DELETE {{ ?alias owl:sameAs ?root . }}
+WHERE {{
+  VALUES ?root {{ <{subject_uri}> }}
+  ?alias owl:sameAs ?root .
+}} ;
+"""
     else:
         alias_delete = ""
-        alias_where = ""
 
     sparql = f"""
 PREFIX owl: <{OWL}>
 PREFIX elm: <{ELM}>
 
+# depth 3 — deepest blank nodes first
 WITH <{graph_uri}>
-DELETE {{
-  ?root ?p0 ?o0 .
-  ?bn1 ?p1 ?o1 .
-  ?bn2 ?p2 ?o2 .
-  ?bn3 ?p3 ?o3 .
-  ?inst ?ip0 ?io0 .
-  ?ibn1 ?ip1 ?io1 .
-  ?ibn2 ?ip2 ?io2 .
-  ?ibn3 ?ip3 ?io3 .
-  {alias_delete}
-}}
+DELETE {{ ?b3 ?p ?o }}
 WHERE {{
   VALUES ?root {{ <{subject_uri}> }}
-  ?root ?p0 ?o0 .
-  OPTIONAL {{
-    ?root ?px0 ?bn1 .
-    FILTER(isBlank(?bn1))
-    ?bn1 ?p1 ?o1 .
-    OPTIONAL {{
-      ?bn1 ?px1 ?bn2 .
-      FILTER(isBlank(?bn2))
-      ?bn2 ?p2 ?o2 .
-      OPTIONAL {{
-        ?bn2 ?px2 ?bn3 .
-        FILTER(isBlank(?bn3))
-        ?bn3 ?p3 ?o3 .
-      }}
-    }}
-  }}
-  OPTIONAL {{
-    ?root elm:learningOpportunity ?inst .
-    ?inst ?ip0 ?io0 .
-    OPTIONAL {{
-      ?inst ?ipx0 ?ibn1 .
-      FILTER(isBlank(?ibn1))
-      ?ibn1 ?ip1 ?io1 .
-      OPTIONAL {{
-        ?ibn1 ?ipx1 ?ibn2 .
-        FILTER(isBlank(?ibn2))
-        ?ibn2 ?ip2 ?io2 .
-        OPTIONAL {{
-          ?ibn2 ?ipx2 ?ibn3 .
-          FILTER(isBlank(?ibn3))
-          ?ibn3 ?ip3 ?io3 .
-        }}
-      }}
-    }}
-  }}
-  {alias_where}
+  ?root elm:learningOpportunity? ?a .
+  ?a  ?q1 ?b1 . FILTER(isBlank(?b1))
+  ?b1 ?q2 ?b2 . FILTER(isBlank(?b2))
+  ?b2 ?q3 ?b3 . FILTER(isBlank(?b3))
+  ?b3 ?p ?o .
 }} ;
+# depth 2
+WITH <{graph_uri}>
+DELETE {{ ?b2 ?p ?o }}
+WHERE {{
+  VALUES ?root {{ <{subject_uri}> }}
+  ?root elm:learningOpportunity? ?a .
+  ?a  ?q1 ?b1 . FILTER(isBlank(?b1))
+  ?b1 ?q2 ?b2 . FILTER(isBlank(?b2))
+  ?b2 ?p ?o .
+}} ;
+# depth 1
+WITH <{graph_uri}>
+DELETE {{ ?b1 ?p ?o }}
+WHERE {{
+  VALUES ?root {{ <{subject_uri}> }}
+  ?root elm:learningOpportunity? ?a .
+  ?a ?q1 ?b1 . FILTER(isBlank(?b1))
+  ?b1 ?p ?o .
+}} ;
+# the anchors themselves: root + its learning opportunities
+WITH <{graph_uri}>
+DELETE {{ ?a ?p ?o }}
+WHERE {{
+  VALUES ?root {{ <{subject_uri}> }}
+  ?root elm:learningOpportunity? ?a .
+  ?a ?p ?o .
+}} ;
+# delete alias
+{alias_delete}
+# insert new data
 INSERT DATA {{
   GRAPH <{graph_uri}> {{
     {triples_nt}
