@@ -256,11 +256,13 @@ def enrich_silver(
     minio_client: Minio,
     session: requests.Session,
     message: Dict[str, Any],
-) -> Optional[List[Dict[str, str]]]:
+) -> Optional[Tuple[List[Dict[str, str]], int]]:
     """Download bronze file, enrich, push each subject to Fuseki, update source row.
 
-    Returns a list of {"uuid", "uri"} dicts for the courses produced, or None
-    on failure.
+    Returns (uploaded_courses, total_count): a list of {"uuid", "uri"} dicts
+    for the courses that were successfully pushed to Fuseki (so gold skips the
+    ones that failed) and the total number of courses enriched. Returns None on
+    failure (bronze download or RDF enrichment).
     """
     provider_uuid = message["provider_uuid"]
     source_uuid = message["source_uuid"]
@@ -295,12 +297,12 @@ def enrich_silver(
     if enriched_graph is None:
         return None
 
-    failed = 0
+    uploaded: List[Dict[str, str]] = []
     for course in courses:
         subgraph_nt = _extract_subgraph(enriched_graph, URIRef(course['uri'])).serialize(format="nt")
-        if not fuseki.replace_subject_in_graph(GRAPH_COURSES, course['uri'], subgraph_nt, session=session, alias_uri=f"urn:uuid:{course['uuid']}", alias_replace=True):
-            failed += 1
-    logger.info("Pushed %s/%s LOS subjects to Fuseki courses graph", len(courses) - failed, len(courses))
+        if fuseki.replace_subject_in_graph(GRAPH_COURSES, course['uri'], subgraph_nt, session=session, alias_uri=f"urn:uuid:{course['uuid']}", alias_replace=True):
+            uploaded.append(course)
+    logger.info("Pushed %s/%s LOS subjects to Fuseki courses graph", len(uploaded), len(courses))
 
     filename = os.path.basename(file_path)
     now = datetime.now(timezone.utc)
@@ -317,4 +319,4 @@ def enrich_silver(
     )
     db.commit()
 
-    return courses
+    return uploaded, len(courses)

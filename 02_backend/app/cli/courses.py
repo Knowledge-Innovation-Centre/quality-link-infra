@@ -262,11 +262,14 @@ def courses_silver(
     table.add_column("Type")
     table.add_column("Status")
     table.add_column("Courses", justify="right")
+    table.add_column("Uploaded", justify="right")
     if reindex:
         table.add_column("Reindexed", justify="right")
     table.add_column("Bronze file")
 
     succeeded = 0
+    course_total = 0
+    uploaded_total = 0
     reindex_uploaded_total = 0
     reindex_failed_total = 0
     for t in targets:
@@ -281,26 +284,38 @@ def courses_silver(
         else:
             msg = res.get("error") or "failed"
             status_cell = f"[red]{msg}[/red]"
+        course_count = res.get("course_count") or 0
+        uploaded = res.get("uploaded_count") or 0
+        course_total += course_count
+        uploaded_total += uploaded
+        upload_cell = str(uploaded)
+        if uploaded < course_count:
+            upload_cell = f"{uploaded} [red]({course_count - uploaded} failed)[/red]"
         row = [
             label,
             t.get("source_type") or "-",
             status_cell,
-            str(res.get("course_count") or 0),
+            str(course_count),
+            upload_cell,
         ]
         if reindex:
-            uploaded = res.get("reindex_uploaded") or 0
-            failed = res.get("reindex_failed") or 0
-            reindex_uploaded_total += uploaded
-            reindex_failed_total += failed
-            cell = str(uploaded)
-            if failed:
-                cell = f"{uploaded} [red]({failed} failed)[/red]"
+            reindexed = res.get("reindex_uploaded") or 0
+            reindex_failed = res.get("reindex_failed") or 0
+            reindex_uploaded_total += reindexed
+            reindex_failed_total += reindex_failed
+            cell = str(reindexed)
+            if reindex_failed:
+                cell = f"{reindexed} [red]({reindex_failed} failed)[/red]"
             row.append(cell)
         row.append(res.get("bronze_file_path") or "-")
         table.add_row(*row)
 
     console.print(table)
     console.print(f"\nRe-silvered {succeeded}/{len(targets)} source(s).")
+    upload_msg = f"Uploaded {uploaded_total}/{course_total} course(s) to Fuseki."
+    if uploaded_total < course_total:
+        upload_msg += f" [red]{course_total - uploaded_total} failed.[/red]"
+    console.print(upload_msg)
     if reindex:
         msg = f"Reindexed {reindex_uploaded_total} course(s)."
         if reindex_failed_total:

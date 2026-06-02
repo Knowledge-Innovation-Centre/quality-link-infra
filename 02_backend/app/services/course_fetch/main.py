@@ -131,15 +131,16 @@ def run_course_fetch(
                     if trans_uuid:
                         update_transaction(db, trans_uuid, bronze_file_path=bronze["file_path"])
 
-                    courses = enrich_silver(db, minio_client, http, bronze)
-                    if courses is None:
+                    silver = enrich_silver(db, minio_client, http, bronze)
+                    if silver is None:
                         raise RuntimeError("silver returned no result")
+                    uploaded_courses, total_count = silver
                     if trans_uuid:
                         update_transaction(
-                            db, trans_uuid, course_count=len(courses),
+                            db, trans_uuid, course_count=total_count,
                         )
 
-                    index_gold(http, courses)
+                    index_gold(http, uploaded_courses)
                     status_val = "success"
                 except Exception as e:
                     error_message = f"{type(e).__name__}: {e}"
@@ -171,7 +172,9 @@ def run_silver_only(source_uuid: UUID, reindex: bool = True) -> dict:
     silver, upserting the produced courses into Meilisearch.
 
     Returns {status, source_uuid, provider_uuid, source_version_uuid,
-    bronze_file_path, course_count, reindex_uploaded, reindex_failed, error}.
+    bronze_file_path, course_count, uploaded_count, reindex_uploaded,
+    reindex_failed, error}. `course_count` is the total enriched; `uploaded_count`
+    is how many of those were successfully pushed to the Fuseki courses graph.
     """
     logger.info(
         "course_fetch (silver-only): source=%s reindex=%s", source_uuid, reindex,
@@ -185,6 +188,7 @@ def run_silver_only(source_uuid: UUID, reindex: bool = True) -> dict:
         "source_version_uuid": None,
         "bronze_file_path": None,
         "course_count": 0,
+        "uploaded_count": 0,
         "reindex_uploaded": 0,
         "reindex_failed": 0,
         "error": None,
@@ -229,16 +233,18 @@ def run_silver_only(source_uuid: UUID, reindex: bool = True) -> dict:
                             db, trans_uuid, bronze_file_path=message["file_path"],
                         )
 
-                    courses = enrich_silver(db, minio_client, http, message)
-                    if courses is None:
+                    silver = enrich_silver(db, minio_client, http, message)
+                    if silver is None:
                         raise RuntimeError("silver returned no result")
+                    uploaded_courses, total_count = silver
 
-                    result["course_count"] = len(courses)
+                    result["course_count"] = total_count
+                    result["uploaded_count"] = len(uploaded_courses)
                     if trans_uuid:
-                        update_transaction(db, trans_uuid, course_count=len(courses))
+                        update_transaction(db, trans_uuid, course_count=total_count)
 
                     if reindex:
-                        uploaded, failed = index_gold(http, courses)
+                        uploaded, failed = index_gold(http, uploaded_courses)
                         result["reindex_uploaded"] = uploaded
                         result["reindex_failed"] = failed
 

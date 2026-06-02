@@ -128,13 +128,20 @@ INSERT DATA {{
 }}
 """
     http = session or requests
-    response = http.post(
-        _update_url(),
-        data=sparql,
-        headers={"Content-Type": "application/sparql-update"},
-        auth=fuseki_auth(),
-        timeout=timeout,
-    )
+    try:
+        response = http.post(
+            _update_url(),
+            data=sparql,
+            headers={"Content-Type": "application/sparql-update"},
+            auth=fuseki_auth(),
+            timeout=timeout,
+        )
+    except requests.exceptions.RequestException as e:
+        logger.error(
+            "SPARQL update failed for <%s> in <%s>: %s",
+            subject_uri, graph_uri, e,
+        )
+        return False
     if response.status_code not in (200, 204):
         logger.error(
             "SPARQL update failed for <%s> in <%s>: %s %s",
