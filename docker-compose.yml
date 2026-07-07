@@ -94,6 +94,7 @@ services:
       - meili_data:/meili_data
     environment:
       MEILI_MASTER_KEY: ${MEILISEARCH_API_KEY}
+      MEILI_ENV: production
 
 volumes:
   fuseki_data:
