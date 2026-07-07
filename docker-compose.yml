@@ -55,7 +55,7 @@ services:
       FUSEKI_PASSWORD: ${FUSEKI_ADMIN_PASSWORD}
       FUSEKI_URL: http://fuseki:3030
       FUSEKI_DATASET_NAME: ${FUSEKI_DATASET_NAME:-qualitylink}
-      MEILISEARCH_URL: ${MEILISEARCH_URL}
+      MEILISEARCH_URL: http://meili:7700
       MEILISEARCH_INDEX: ${MEILISEARCH_INDEX:-ql_courses}
       MEILISEARCH_API_KEY: ${MEILISEARCH_API_KEY}
       SKILLDATA_API_URL: ${SKILLDATA_API_URL}
@@ -67,6 +67,7 @@ services:
       - postgres
       - minio
       - fuseki
+      - meili
     restart: unless-stopped
 
   fuseki:
@@ -87,8 +88,16 @@ services:
       timeout: 10s
       retries: 3
 
+  meili:
+    image: getmeili/meilisearch:v1.49
+    volumes:
+      - meili_data:/meili_data
+    environment:
+      MEILI_MASTER_KEY: ${MEILISEARCH_API_KEY}
+
 volumes:
   fuseki_data:
   postgres_data:
   minio_data:
+  meili_data:
 
