@@ -1,16 +1,17 @@
 import logging
 import re
 import uuid
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Iterable, Optional
 
 import requests
 from rdflib import BNode, Graph, Literal, Namespace, URIRef
-from rdflib.namespace import RDF, SKOS, XSD
+from rdflib.namespace import DCTERMS, RDF, SKOS, XSD
 
 logger = logging.getLogger(__name__)
 
 ELM = Namespace("http://data.europa.eu/snb/model/elm/")
 ADMS = Namespace("http://www.w3.org/ns/adms#")
+QL = Namespace("http://data.quality-link.eu/ontology/v1#")
 
 
 # ---------------------------------------------------------------------------
@@ -80,6 +81,37 @@ def get_date_datatype(value: str):
     return XSD.date
 
 
+# elm:isPartOf and elm:hasPart are inverses of one another.
+_INVERSE_PART_PREDICATES = ((ELM.isPartOf, ELM.hasPart), (ELM.hasPart, ELM.isPartOf))
+
+
+def add_inverse_part_links(graph: Graph, los_subjects: Iterable[URIRef]) -> int:
+    """Materialise the reverse of every part link between learning opportunities.
+
+    For `X elm:isPartOf Y` add `Y elm:hasPart X` and vice versa, but only when
+    the object is one of `los_subjects` — a learning opportunity this graph
+    actually describes. Both directions are stored on their own subject, so each
+    survives its own root push in silver (which replaces one subject at a time).
+
+    Links whose object is not in `los_subjects` are left as a one-way reference
+    and counted in the return value. That happens when a source names a
+    programme it does not publish, or when the course and its programme come
+    from different sources: each bronze file is mapped in isolation, so a
+    cross-source pair cannot be inverted here. Same-source is the normal case.
+
+    Returns the number of unresolvable link objects, for logging.
+    """
+    known = set(los_subjects)
+    dangling = 0
+    for predicate, inverse in _INVERSE_PART_PREDICATES:
+        for subject, obj in list(graph.subject_objects(predicate)):
+            if obj in known:
+                graph.add((obj, inverse, subject))
+            else:
+                dangling += 1
+    return dangling
+
+
 class DataSourceType:
     """Base class for data sources.
 
@@ -96,8 +128,16 @@ class DataSourceType:
         "application/ld+json",
     )
 
+    # EU "Learning opportunity type" concepts
+    # (http://data.europa.eu/snb/learning-opportunity/25831c2 — 13 concepts,
+    # fetched into the vocabulary graph via DEFAULT_VOCABULARIES). Others
+    # available if ever needed: Short learning programme (74a4a268e8),
+    # Apprenticeship (63f9f6180c), MOOC (17744a2647), Class (7e1ac538db),
+    # Mentoring (11252a5207), Study visit (65a4cf5de2), Challenge (c_170b037d),
+    # Service learning (8b965da2d4).
     COURSE_TYPE = URIRef("http://data.europa.eu/snb/learning-opportunity/05053c1cbe")
     PROGRAMME_TYPE = URIRef("http://data.europa.eu/snb/learning-opportunity/79343569f3")
+    PROGRAMME_MODULE_TYPE = URIRef("http://data.europa.eu/snb/learning-opportunity/0f7dac46ca")
 
     def __init__(self, source: Dict):
         self.source = source
@@ -187,6 +227,15 @@ class DataSourceType:
         """
         if source_dict.get(key) and source_dict[key] in mapping:
             graph.add((subject, predicate, mapping[source_dict[key]]))
+
+
+    def _add_type(self, graph: Graph, subject: URIRef, value, mapping: Dict, fallback: URIRef) -> None:
+        """Emit dcterms:type from `mapping[value]`, falling back to `fallback`.
+
+        Source type enums are extensible (OOAPI `x-`, Edu-API `ext:`), so an
+        unrecognised value must still yield a usable type rather than none.
+        """
+        graph.add((subject, DCTERMS.type, mapping.get(value) or fallback))
 
 
     def _add_identifier(

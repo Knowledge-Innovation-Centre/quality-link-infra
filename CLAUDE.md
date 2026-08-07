@@ -36,6 +36,9 @@ The backend is modular, not a single-file app. Layout:
   - `deqar.py` — refresh provider registry from DEQAR and push to the Fuseki reference graph.
   - `datalake.py` — `queue_provider_data`: validates a fetch request (lock state, version freshness) and schedules `run_course_fetch` via `BackgroundTasks`.
   - `course_fetch/` — the ETL pipeline: `bronze.py` downloads raw source data to MinIO, `silver.py` enriches to RDF and writes to Fuseki, `gold.py` frames JSON-LD and indexes into Meilisearch. Per-source-type adapters live in `course_fetch/source_types/` (`elm`, `ooapi`, `edu-api`).
+    - OOAPI fetches `/courses` + per-course `/offerings`, and `/programmes` + `/programmes/{id}/programme-offerings`. Edu-API fetches `/courseTemplates` + `/courseOfferings`, and `/collectionTemplates` + `/collectionOfferings`. The programme/collection endpoints are treated as optional — a non-200 skips that collection instead of failing the run.
+    - Courses and programmes are the *same* RDF class (`ql:LearningOpportunitySpecification`); only `dcterms:type` distinguishes them (see `DataSourceType.COURSE_TYPE` / `PROGRAMME_TYPE` / `PROGRAMME_MODULE_TYPE`). Each adapter shares its course and programme field mapping via `_map_los_common`, and one `_map_offering` serves both kinds of offering.
+    - Both APIs express membership upward only (`Course.programmeIds`, `CourseTemplate.parent[]`). `base.add_inverse_part_links` materialises the reverse `elm:hasPart` in-memory after mapping, so each direction lives on its own subject. A reference to a programme the source does not publish stays a one-way link and is counted in the fetch log.
   - `fuseki.py`, `keys.py`, `locks.py`, `vocabulary.py` — Fuseki client, `ql_cred` keypair management, advisory-lock helpers, EU controlled-vocabulary fetcher.
 - `schema/frame.json` — JSON-LD frame used by the gold stage.
 
@@ -50,6 +53,8 @@ Concurrency control uses **Postgres advisory locks** (`services/locks.py`), not 
 1. **Bronze** — fetch raw data from the provider source, write to MinIO at `{bucket}/courses/{provider_uuid}/{source_version_uuid}/{source_uuid}/{YYYY-MM-DD}/...`.
 2. **Silver** — parse into an RDF graph, enrich against the reference graph, and (when `SKILLDATA_API_URL` is set) call the Skilldata `analyze_course` API per course to fill missing learning outcomes / ESCO skills / ISCED-F / language; AI-populated predicates are recorded as `ql:aiEnrichedField`. Upload to Fuseki's courses graph.
 3. **Gold** — SPARQL → JSON-LD frame (`schema/frame.json`) → flat docs → Meilisearch index.
+
+Both stages traverse the graph, and both stop at references to *other* learning opportunities (`silver.LOS_LINK_PREDICATES`, `courses.LOS_LINK_PREDICATES` — keep the two lists in sync). Each LOS is pushed to Fuseki as its own subject, so a subgraph describes one learning opportunity and merely links to its neighbours. Without that bound, the closure from one course would reach its programme, every sibling course, and all their offerings — and since `replace_subject_in_graph` only deletes triples belonging to the subject being pushed, the copies would never be cleaned up. `courses.frame_course` additionally blocks `foaf:member` (the publisher's alliance) and the SKOS hierarchy, and reads a small `uri`/`uuid`/title/identifier stub for each linked LOS so the frontend can render a link without dereferencing it. Use `course rebuild-graph` to clean up data written before this bound existed.
 4. Log a row in `transaction` (unique per provider+version+date).
 
 ### Database schema
@@ -105,6 +110,7 @@ python cli.py course frame    <URI|UUID>                  # get framed JSON-LD f
 python cli.py course fetch    <UUID|ETER_ID|DEQAR_ID> [--source SOURCE_UUID]    # bronze→silver→gold
 python cli.py course silver   [<UUID|ETER_ID|DEQAR_ID>] [--source SOURCE_UUID] [--all]  # re-run silver from latest bronze
 python cli.py course reindex  [<URI|UUID>] [--provider <UUID|ETER_ID|DEQAR_ID>] [--all]  # re-run gold / Meilisearch
+python cli.py course rebuild-graph --yes [--no-reindex]  # CLEAR the courses graph, re-silver every source from bronze, reindex
 python cli.py provider list   [SEARCH] [--with-data] [--page N] [--page-size N]
 python cli.py provider manifest <UUID|ETER_ID|DEQAR_ID>   # DNS + .well-known discovery
 python cli.py provider sources  <UUID|ETER_ID|DEQAR_ID>   # show probes + latest version's sources

@@ -69,6 +69,18 @@
         },
         "elm:location": {
             "@container": "@set"
+        },
+        "elm:isPartOf": {
+            "@container": "@set"
+        },
+        "elm:hasPart": {
+            "@container": "@set"
+        },
+        "elm:specialisationOf": {
+            "@container": "@set"
+        },
+        "elm:generalisationOf": {
+            "@container": "@set"
         }
     },
     "@type": [
@@ -139,22 +151,30 @@
     "elm:isPartOf": {
         "@embed": "@always",
         "@explicit": true,
-        "skos:prefLabel": {}
+        "dcterms:title": {},
+        "adms:identifier": {},
+        "uuid": {}
     },
     "elm:hasPart": {
         "@embed": "@always",
         "@explicit": true,
-        "skos:prefLabel": {}
+        "dcterms:title": {},
+        "adms:identifier": {},
+        "uuid": {}
+    },
+    "elm:specialisationOf": {
+        "@embed": "@always",
+        "@explicit": true,
+        "dcterms:title": {},
+        "adms:identifier": {},
+        "uuid": {}
     },
     "elm:generalisationOf": {
         "@embed": "@always",
         "@explicit": true,
-        "skos:prefLabel": {}
-    },
-    "elm:specialisationf": {
-        "@embed": "@always",
-        "@explicit": true,
-        "skos:prefLabel": {}
+        "dcterms:title": {},
+        "adms:identifier": {},
+        "uuid": {}
     },
     "elm:learningOpportunity": {
         "dcterms:language": {
@@ -163,16 +183,6 @@
             "skos:prefLabel": {}
         },
         "elm:providedBy": {
-            "@embed": "@always",
-            "@explicit": true,
-            "skos:prefLabel": {}
-        },
-        "elm:isPartOf": {
-            "@embed": "@always",
-            "@explicit": true,
-            "skos:prefLabel": {}
-        },
-        "elm:hasPart": {
             "@embed": "@always",
             "@explicit": true,
             "skos:prefLabel": {}

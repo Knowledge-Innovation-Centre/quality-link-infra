@@ -8,7 +8,9 @@ from rich.console import Console
 from rich.table import Table
 from sqlalchemy import text
 
+from config import GRAPH_COURSES
 from database import SessionLocal
+from services import fuseki
 from services.course_fetch.bronze import (
     latest_bronze_for_source,
     list_sources_with_bronze,
@@ -321,6 +323,111 @@ def courses_silver(
         if reindex_failed_total:
             msg += f" [red]{reindex_failed_total} failed.[/red]"
         console.print(msg)
+
+
+@courses_app.command("rebuild-graph")
+def courses_rebuild_graph(
+    yes: bool = typer.Option(
+        False, "--yes", help="Confirm clearing and rebuilding the courses graph",
+    ),
+    no_reindex: bool = typer.Option(
+        False, "--no-reindex", help="Skip the final Meilisearch reindex",
+    ),
+) -> None:
+    """Clear the Fuseki courses graph and rebuild it from the retained bronze files.
+
+    Silver used to copy a referenced learning opportunity's triples into every
+    referring subject's payload. replace_subject_in_graph only deletes triples
+    belonging to the subject being pushed, and INSERT DATA relabels blank nodes
+    on each request, so those copies accumulated a duplicate blank-node subtree
+    per run and were never cleaned up. Bounding the traversal stops new damage;
+    this command removes what earlier runs already wrote.
+
+    A surgical DELETE is not viable — the stale set is defined by reachability
+    under the new traversal, and a duplicated blank-node subtree is
+    indistinguishable from a legitimate one without re-deriving the subgraph.
+    Rebuilding is safe because course UUIDs are derived deterministically
+    (uuid5 over the subject URI), so no Meilisearch document id changes.
+
+    Only the courses graph is touched; the reference and vocabulary graphs are
+    left alone.
+    """
+    if not yes:
+        _die(
+            "This clears the whole courses graph and re-runs silver for every "
+            "source with a bronze file. Re-run with --yes to confirm."
+        )
+
+    before = fuseki.count_graph_triples(GRAPH_COURSES)
+    console.print(
+        f"Courses graph: [cyan]{GRAPH_COURSES}[/cyan] — "
+        f"{before if before is not None else '?'} triples before"
+    )
+
+    with SessionLocal() as db:
+        targets = list_sources_with_bronze(db)
+    if not targets:
+        _die("No sources with a bronze file on record — refusing to clear the graph.")
+
+    console.print(f"Found [cyan]{len(targets)}[/cyan] source(s) with a bronze file.")
+
+    with console.status("Clearing courses graph..."):
+        if not fuseki.sparql_update(f"CLEAR GRAPH <{GRAPH_COURSES}>"):
+            _die("CLEAR GRAPH failed — see logs. Nothing was rebuilt.")
+    console.print("[green]cleared[/green]")
+
+    succeeded = 0
+    failed: list[str] = []
+    course_total = 0
+    uploaded_total = 0
+    for t in targets:
+        label = t.get("source_name") or t["source_uuid"]
+        console.print(f"[cyan]silver[/cyan] {label} ({t['source_uuid']})...")
+        # Reindex once at the end instead of per source.
+        res = run_silver_only(UUID(t["source_uuid"]), reindex=False)
+        course_total += res.get("course_count") or 0
+        uploaded_total += res.get("uploaded_count") or 0
+        if res["status"] == "success":
+            succeeded += 1
+        else:
+            failed.append(f"{label}: {res.get('error') or res['status']}")
+
+    after = fuseki.count_graph_triples(GRAPH_COURSES)
+    summary = Table(title="Rebuild summary")
+    summary.add_column("Metric")
+    summary.add_column("Value", justify="right")
+    summary.add_row("Sources re-silvered", f"{succeeded}/{len(targets)}")
+    summary.add_row("Courses uploaded", f"{uploaded_total}/{course_total}")
+    summary.add_row("Triples before", str(before) if before is not None else "?")
+    summary.add_row("Triples after", str(after) if after is not None else "?")
+    if before is not None and after is not None:
+        summary.add_row("Difference", f"{after - before:+d}")
+    console.print(summary)
+
+    for f in failed:
+        console.print(f"[red]failed[/red] {f}")
+
+    if not no_reindex:
+        console.print("\nReindexing every course in Meilisearch...")
+        with console.status("Enumerating all courses in Fuseki..."):
+            courses = list_all_courses()
+        uploaded = 0
+        reindex_failed = 0
+        with requests.Session() as http:
+            with console.status(f"Reindexing {len(courses)} course(s)...") as status_:
+                for i, c in enumerate(courses, 1):
+                    if reindex_course(http, c["uuid"], c.get("uri")):
+                        uploaded += 1
+                    else:
+                        reindex_failed += 1
+                    status_.update(f"Reindexing {i}/{len(courses)}...")
+        msg = f"Reindexed {uploaded}/{len(courses)} course(s)."
+        if reindex_failed:
+            msg += f" [red]{reindex_failed} failed.[/red]"
+        console.print(msg)
+
+    if failed:
+        raise typer.Exit(code=2)
 
 
 @courses_app.command("reindex")

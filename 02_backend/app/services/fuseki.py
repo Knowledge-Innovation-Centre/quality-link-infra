@@ -146,6 +146,50 @@ INSERT DATA {{
     return True
 
 
+def sparql_update(
+    update: str,
+    *,
+    session: Optional[requests.Session] = None,
+    timeout: int = 120,
+) -> bool:
+    """Run an arbitrary SPARQL Update. Returns False and logs on failure."""
+    http = session or requests
+    try:
+        response = http.post(
+            _update_url(),
+            data=update.encode("utf-8"),
+            headers={"Content-Type": "application/sparql-update"},
+            auth=fuseki_auth(),
+            timeout=timeout,
+        )
+    except requests.exceptions.RequestException as e:
+        logger.error("SPARQL update failed: %s", e)
+        return False
+    if response.status_code not in (200, 204):
+        logger.error(
+            "SPARQL update failed: %s %s",
+            response.status_code, response.text[:200],
+        )
+        return False
+    return True
+
+
+def count_graph_triples(
+    graph_uri: str, *, session: Optional[requests.Session] = None
+) -> Optional[int]:
+    """Return the number of triples in a named graph, or None if unavailable."""
+    bindings = sparql_select(
+        f"SELECT (COUNT(*) AS ?n) FROM <{graph_uri}> WHERE {{ ?s ?p ?o }}",
+        session=session,
+    )
+    if not bindings:
+        return None
+    try:
+        return int(bindings[0]["n"]["value"])
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
 def upload_turtle(
     graph_uri: str,
     turtle: str,

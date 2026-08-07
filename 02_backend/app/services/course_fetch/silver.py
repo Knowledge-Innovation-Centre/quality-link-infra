@@ -21,6 +21,30 @@ QL = Namespace("http://data.quality-link.eu/ontology/v1#")
 ELM = Namespace("http://data.europa.eu/snb/model/elm/")
 
 DEFAULT_TYPE = URIRef("http://data.europa.eu/snb/learning-opportunity/05053c1cbe")
+PROGRAMME_TYPE = URIRef("http://data.europa.eu/snb/learning-opportunity/79343569f3")
+
+# Predicates whose object is a *reference* to another learning opportunity, not
+# a description of one. The link triple is kept, but the referenced node is
+# never traversed into: it is a separate root with its own push, so copying any
+# of its triples here would insert statements that
+# fuseki.replace_subject_in_graph's root-scoped DELETE never removes (and whose
+# blank nodes INSERT DATA would relabel, accumulating a duplicate subtree per
+# run).
+#
+# This is every sh:path in reference/qualitylink-profile.ttl whose range is
+# ql:LearningOpportunity{Specification,Instance}Reference, plus
+# elm:generalisationOf — absent from the QL profile but present in ELM LOQ, so
+# it can still arrive via an ELM source.
+LOS_LINK_PREDICATES = frozenset({
+    ELM.isPartOf,
+    ELM.hasPart,
+    ELM.specialisationOf,
+    ELM.generalisationOf,
+    QL.superseded,
+    QL.entryRequirementLearningOpportunity,
+    QL.limitLearningOpportunity,
+})
+
 
 def _has_type(graph: Graph, subject, *types) -> bool:
     """
@@ -44,26 +68,49 @@ def _is_uuid(uri):
         return False
 
 
-def _collect(src: Graph, dst: Graph, node, visited: set) -> None:
+def _collect(src: Graph, dst: Graph, node, visited: set, stop_nodes: frozenset) -> None:
     """
     Recursively collect all statements starting from node,
-    avoiding loops by tracking visited nodes
+    avoiding loops by tracking visited nodes.
+
+    Traversal stops at references to other learning opportunities: the link
+    triple is kept, but the referenced node is not described. Both stop
+    conditions are needed and cover different cases:
+
+    - `LOS_LINK_PREDICATES` catches a neighbour described inline without a
+      class this pipeline recognises. It is also the only condition that
+      closes ql:limitLearningOpportunity, whose range is a LOS reference *or*
+      a LOI reference — a LOI is not in `stop_nodes`, so without the predicate
+      check the walk would enter the other course's offering, follow
+      elm:learningAchievementSpecification up to that course, and continue
+      into all of its offerings. The check fires at every depth, which matters
+      because the property sits several blank nodes below a LOI.
+    - `stop_nodes` catches the converse: a LOS reached by some predicate not on
+      the list at all, including any path added to the profile later.
     """
     if node in visited:
         return
     visited.add(node)
     for p, o in src.predicate_objects(node):
         dst.add((node, p, o))
-        if isinstance(o, BNode) or isinstance(o, URIRef):
-            _collect(src, dst, o, visited)
+        if not isinstance(o, (BNode, URIRef)):
+            continue
+        if p in LOS_LINK_PREDICATES or o in stop_nodes:
+            continue
+        _collect(src, dst, o, visited, stop_nodes)
 
 
-def _extract_subgraph(graph: Graph, root: URIRef) -> Graph:
+def _extract_subgraph(graph: Graph, root: URIRef, stop_nodes=frozenset()) -> Graph:
     """
-    Extract a sub-graph starting from root
+    Extract a sub-graph starting from root, stopping at references to other
+    learning opportunities.
+
+    `stop_nodes` is the set of sibling LOS roots in the same graph. `root`
+    itself is always removed from it — otherwise a root that is its own
+    stop-node would yield an empty subgraph.
     """
     sub = Graph()
-    _collect(graph, sub, root, set())
+    _collect(graph, sub, root, set(), frozenset(stop_nodes) - {root})
     return sub
 
 
@@ -240,9 +287,13 @@ def _enrich_rdf_graph(
                 if (narrow := _truncated_isced_f(code, 3)) is not None:
                     graph.add((los_uri, QL.ISCEDFNarrowField, narrow))
 
+        programme_count = sum(
+            1 for los_uri in los_subjects
+            if (los_uri, DCTERMS.type, PROGRAMME_TYPE) in graph
+        )
         logger.info(
-            "Enriched: %s LOS, %s LOI, %s courses, %s triples",
-            len(los_subjects), len(loi_subjects), len(courses), len(graph),
+            "Enriched: %s LOS (%s programmes), %s LOI, %s courses, %s triples",
+            len(los_subjects), programme_count, len(loi_subjects), len(courses), len(graph),
         )
         return [{"uuid": u, "uri": uri} for u, uri in courses.items()], graph
 
@@ -297,9 +348,19 @@ def enrich_silver(
     if enriched_graph is None:
         return None
 
+    # Every LOS is pushed as its own root, so each one is a stop node for the
+    # others: a subgraph describes exactly one learning opportunity and merely
+    # links to its neighbours. That is what keeps each push proportional to its
+    # own subject, and it is also why replace_subject_in_graph needs no change —
+    # every triple here has the root or one of the root's own blank nodes as its
+    # subject, which is precisely what its DELETE clause covers.
+    stop_nodes = frozenset(URIRef(c["uri"]) for c in courses)
+
     uploaded: List[Dict[str, str]] = []
     for course in courses:
-        subgraph_nt = _extract_subgraph(enriched_graph, URIRef(course['uri'])).serialize(format="nt")
+        subgraph_nt = _extract_subgraph(
+            enriched_graph, URIRef(course['uri']), stop_nodes=stop_nodes
+        ).serialize(format="nt")
         if fuseki.replace_subject_in_graph(GRAPH_COURSES, course['uri'], subgraph_nt, session=session, alias_uri=f"urn:uuid:{course['uuid']}", alias_replace=True):
             uploaded.append(course)
     logger.info("Pushed %s/%s LOS subjects to Fuseki courses graph", len(uploaded), len(courses))
