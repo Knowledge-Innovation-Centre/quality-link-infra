@@ -49,15 +49,17 @@ def reindex_course(
             logger.warning("Resolve failed for %s: %s", course_uuid, e)
             return False
 
+    # framed["id"] is read inside the try: frame_course guarantees a single
+    # top-level node, but a malformed frame would otherwise raise KeyError here
+    # and escape all the way out of index_gold, failing the whole run.
     try:
         framed = frame_course(course_uri)
+        framed.pop("@context", None)
+        framed["uri"] = framed["id"]
+        framed["id"] = course_uuid
     except Exception as e:
         logger.warning("Framing failed for %s: %s", course_uuid, e)
         return False
-
-    framed.pop("@context", None)
-    framed["uri"] = framed["id"]
-    framed["id"] = course_uuid
 
     if "elm:learningOpportunity" in framed and isinstance(framed["elm:learningOpportunity"], list):
         count = len(framed["elm:learningOpportunity"])
