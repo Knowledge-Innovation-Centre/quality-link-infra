@@ -24,7 +24,7 @@ Meilisearch is expected to run externally in production; add it via `docker-comp
 
 The backend is modular, not a single-file app. Layout:
 
-- `main.py` — FastAPI app factory. Mounts `routers/` and a separate public sub-app at `/api/v1` with wildcard CORS for the `credentials` router (so provider domains can fetch the QL public key).
+- `main.py` — FastAPI app factory. Mounts `routers/` and a separate public sub-app at `/api/v1` with wildcard CORS for the `credentials` router (so provider domains can fetch the QL public key) and the `search` router (public read-only Meilisearch proxy).
 - `cli.py` — Typer CLI entry point; assembles the groups defined under `cli/` (`provider`, `vocabulary`, `course`).
 - `cli/` — per-group command modules: `providers.py` (list / manifest / sources / refresh), `vocabulary.py` (fetch), `courses.py` (list / frame / fetch / silver / reindex — the course-pipeline ops), `eter.py` (fetch / show — ETER indicators).
 - `config.py` — env-var loading (DB, MinIO, Fuseki, Meilisearch, DEQAR, default vocabularies, graph IRIs).
@@ -38,6 +38,7 @@ The backend is modular, not a single-file app. Layout:
   - `course_fetch/` — the ETL pipeline: `bronze.py` downloads raw source data to MinIO, `silver.py` enriches to RDF and writes to Fuseki, `gold.py` frames JSON-LD and indexes into Meilisearch. Per-source-type adapters live in `course_fetch/source_types/` (`elm`, `ooapi`, `edu-api`).
   - `eter.py` — ETER API client, MinIO raw-payload cache, student-to-staff ratio derivation, and the push into the Fuseki stats graph. **No Postgres table by design** — MinIO holds the raw payload and Fuseki the derived ratios; don't "fix" the missing table.
   - `course_fetch/ratio.py` — gold-time resolution of the closest-matching ratio for a framed course.
+  - `search.py` — read-only proxy to the Meilisearch `search` endpoint of `MEILISEARCH_INDEX`, using the search-only `MEILISEARCH_SEARCH_KEY` (never the master key; 503 if unset). Backs `GET|POST /api/v1/search`.
   - `fuseki.py`, `keys.py`, `locks.py`, `vocabulary.py` — Fuseki client, `ql_cred` keypair management, advisory-lock helpers, EU controlled-vocabulary fetcher.
 - `schema/frame.json` — JSON-LD frame used by the gold stage.
 
@@ -139,7 +140,7 @@ Or run inside the container: `docker-compose exec backend python cli.py ...`.
 - **Database access** uses SQLAlchemy with raw `text()` SQL — no ORM models. Parameterize everything.
 - **Sessions**: HTTP handlers use `Depends(get_db)`; CLI commands and background tasks open their own `SessionLocal()` via `with` blocks.
 - **Provider identifiers**: services that take a provider accept a UUID; the CLI resolves UUID / ETER id / DEQAR id via `services.providers.resolve_provider_uuid`.
-- **CORS**: the main app allows the configured frontend origin; the `/api/v1` sub-app (public key) uses wildcard CORS — don't add other routes to it.
+- **CORS**: the main app allows the configured frontend origin; the `/api/v1` sub-app uses wildcard CORS (no credentials) — only intentionally public, unauthenticated, read-only routes belong there (today: public key, search proxy). The main app wraps `ScopedCORSMiddleware` (`main.py`), which passes `/api/v1/*` through untouched — stock `CORSMiddleware` answers every preflight itself and would 400 foreign origins before the sub-app ever sees them.
 
 ### Frontend
 - Path alias `@/` → `src/`. Pages in `src/pages/`, feature components in `src/components/features/`, reusable UI in `src/components/ui/`, API clients in `src/api/`, hooks in `src/hooks/`, types in `src/types/`.

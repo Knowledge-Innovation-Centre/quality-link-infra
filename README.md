@@ -192,11 +192,11 @@ PostgreSQL is initialised from `00_postgres/00_init.sql` with additive migration
 
 ### Backend (FastAPI)
 Hosts both the REST API and the in-process ETL pipeline. Key modules:
-- `routers/` — thin HTTP adapters (`health`, `providers`, `manifest`, `datalake`, `credentials`)
-- `services/` — business logic (`manifest`, `providers`, `deqar`, `datalake`, `course_fetch/*`, `fuseki`, `keys`, `locks`, `vocabulary`)
+- `routers/` — thin HTTP adapters (`health`, `providers`, `manifest`, `datalake`, `credentials`, `search`)
+- `services/` — business logic (`manifest`, `providers`, `deqar`, `datalake`, `course_fetch/*`, `fuseki`, `keys`, `locks`, `vocabulary`, `search`)
 - `cli.py` — Typer admin CLI (see [Admin CLI](#admin-cli))
 
-A separate public sub-app is mounted at `/api/v1` with wildcard CORS so any provider domain can fetch the public key.
+A separate public sub-app is mounted at `/api/v1` with wildcard CORS, hosting the routes that are meant to be reachable from any origin: the public key (fetched by provider domains) and the read-only Meilisearch search proxy. The main app's CORS middleware (`ScopedCORSMiddleware`) deliberately skips `/api/v1/*` so those preflights are answered by the sub-app's wildcard policy instead of being rejected as foreign origins.
 
 ### PostgreSQL
 Operational database. Schema is baked into the image from `00_postgres/*.sql`. Concurrency control (e.g. preventing overlapping manifest pulls for the same provider) uses session-scoped advisory locks via `pg_try_advisory_lock(ns, hashtext(key))`.
@@ -299,6 +299,22 @@ GET  /api/v1/public-key        # JSON with PEM + timestamps
 GET  /api/v1/public-key/pem    # PEM as text/plain
 ```
 Wildcard CORS — any provider domain can fetch the active signing key.
+
+### Search (public sub-app at `/api/v1`)
+```
+POST /api/v1/search            # Meilisearch search body, e.g. {"q": "data science", "limit": 20}
+GET  /api/v1/search?q=…        # same, using Meilisearch's query-string form
+```
+A read-only proxy to the search endpoint of the configured index (`MEILISEARCH_INDEX`). Meilisearch
+exposes no ports in production, so this is how public clients — such as the
+[course catalogue](https://github.com/Knowledge-Innovation-Centre/course-catalogue) — reach the
+index. Request parameters and Meilisearch's response (including its error bodies) are passed
+through, except that `limit` / `hitsPerPage` are capped at `SEARCH_MAX_LIMIT` (default 100).
+
+The proxy authenticates with `MEILISEARCH_SEARCH_KEY`, which must be a **search-only** key scoped
+to the index (see `.example.env` for the `curl` that mints one). It never falls back to the master
+key `MEILISEARCH_API_KEY`: while the search key is unset the endpoint returns 503. There is no
+rate limiting in the app — apply it at the reverse proxy.
 
 ## Admin CLI
 
@@ -512,10 +528,10 @@ SELECT * FROM pg_locks WHERE locktype='advisory';
 ## Security Considerations
 
 - Change all default passwords in `.env` before deployment.
-- The main app's CORS is restricted to the configured frontend origin; the `/api/v1` sub-app (public key) uses wildcard CORS — do not add other routes there.
-- Place services behind a reverse proxy (Caddy, nginx, Coolify) for TLS termination.
+- The main app's CORS is restricted to the configured frontend origin; the `/api/v1` sub-app uses wildcard CORS — only intentionally public, unauthenticated, read-only routes belong there.
+- Place services behind a reverse proxy (Caddy, nginx, Coolify) for TLS termination, and rate-limit `/api/v1/search` there — the app itself does not.
 - Do not expose the MinIO console publicly in production.
-- Use separate read-only Meilisearch keys for frontend search operations; the backend needs a key with index/write permissions.
+- Keep the Meilisearch keys separate: `MEILISEARCH_SEARCH_KEY` (search action only, index-scoped) is what the public proxy sends; `MEILISEARCH_API_KEY` needs index/write permissions and must stay server-side.
 
 ## Branching
 
