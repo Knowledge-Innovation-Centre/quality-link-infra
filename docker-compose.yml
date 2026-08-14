@@ -63,6 +63,8 @@ services:
       SKILLDATA_API_TIMEOUT: ${SKILLDATA_API_TIMEOUT:-60}
       SKILLDATA_SKILL_LIMIT: ${SKILLDATA_SKILL_LIMIT:-5}
       SKILLDATA_MAX_DISTANCE: ${SKILLDATA_MAX_DISTANCE:-0.3}
+      ETER_API_URL: ${ETER_API_URL:-https://eter-project.com/api/4.0/}
+      ETER_API_TIMEOUT: ${ETER_API_TIMEOUT:-120}
     depends_on:
       - postgres
       - minio

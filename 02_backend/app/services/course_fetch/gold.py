@@ -10,6 +10,7 @@ from config import (
     MEILISEARCH_URL,
 )
 from services import fuseki
+from services.course_fetch.ratio import resolve_student_staff_ratio
 from services.courses import (
     CourseNotFound,
     frame_course,
@@ -62,6 +63,14 @@ def reindex_course(
         count = len(framed["elm:learningOpportunity"])
         if count > 0:
             framed["instanceCount"] = len(framed["elm:learningOpportunity"])
+
+    try:
+        ratio = resolve_student_staff_ratio(framed, session=session)
+        if ratio is not None:
+            framed["studentStaffRatio"] = ratio
+    except Exception as e:
+        # Enrichment must never cost a course its index entry.
+        logger.warning("Student-staff ratio lookup failed for %s: %s", course_uuid, e)
 
     try:
         r = session.post(_meili_url(), headers=_meili_headers(), json=framed, timeout=30)

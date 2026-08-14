@@ -31,6 +31,9 @@ DEQAR_API_URL = os.getenv(
     "DEQAR_API_URL", "https://backend.testzone.eqar.eu/connectapi/v1/providers/"
 )
 
+ETER_API_URL = os.getenv("ETER_API_URL", "https://eter-project.com/api/4.0/")
+ETER_API_TIMEOUT = int(os.getenv("ETER_API_TIMEOUT", "120"))
+
 SKILLDATA_API_URL = os.getenv("SKILLDATA_API_URL")
 SKILLDATA_API_KEY = os.getenv("SKILLDATA_API_KEY")
 SKILLDATA_API_TIMEOUT = int(os.getenv("SKILLDATA_API_TIMEOUT", "60"))
@@ -40,6 +43,7 @@ SKILLDATA_MAX_DISTANCE = float(os.getenv("SKILLDATA_MAX_DISTANCE", "0.3"))
 GRAPH_COURSES = "http://data.quality-link.eu/graph/courses"
 GRAPH_REFERENCE = "http://data.quality-link.eu/graph/reference"
 GRAPH_VOCABULARY = "http://data.quality-link.eu/graph/vocabulary"
+GRAPH_STATS = "http://data.quality-link.eu/graph/stats"
 
 DEFAULT_VOCABULARIES = [
     # Each entry: {"scheme": <uri>, "properties": [<extra prop uri>, ...]}.

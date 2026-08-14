@@ -35,6 +35,38 @@ def query_url() -> str:
     return f"{FUSEKI_URL}/{FUSEKI_DATASET_NAME}/sparql"
 
 
+def sparql_update(
+    update: str,
+    *,
+    session: Optional[requests.Session] = None,
+    timeout: int = 60,
+    context: str = "",
+) -> bool:
+    """POST a SPARQL Update to the /update endpoint. Returns True on success.
+
+    `context` is only used to make the log line identifiable on failure.
+    """
+    http = session or requests
+    try:
+        response = http.post(
+            _update_url(),
+            data=update.encode("utf-8"),
+            headers={"Content-Type": "application/sparql-update"},
+            auth=fuseki_auth(),
+            timeout=timeout,
+        )
+    except requests.exceptions.RequestException as e:
+        logger.error("SPARQL update failed %s: %s", context, e)
+        return False
+    if response.status_code not in (200, 204):
+        logger.error(
+            "SPARQL update failed %s: %s %s",
+            context, response.status_code, response.text[:200],
+        )
+        return False
+    return True
+
+
 def replace_subject_in_graph(
     graph_uri: str,
     subject_uri: str,
@@ -122,28 +154,12 @@ INSERT DATA {{
   }}
 }}
 """
-    http = session or requests
-    try:
-        response = http.post(
-            _update_url(),
-            data=sparql,
-            headers={"Content-Type": "application/sparql-update"},
-            auth=fuseki_auth(),
-            timeout=timeout,
-        )
-    except requests.exceptions.RequestException as e:
-        logger.error(
-            "SPARQL update failed for <%s> in <%s>: %s",
-            subject_uri, graph_uri, e,
-        )
-        return False
-    if response.status_code not in (200, 204):
-        logger.error(
-            "SPARQL update failed for <%s> in <%s>: %s %s",
-            subject_uri, graph_uri, response.status_code, response.text[:200],
-        )
-        return False
-    return True
+    return sparql_update(
+        sparql,
+        session=session,
+        timeout=timeout,
+        context=f"for <{subject_uri}> in <{graph_uri}>",
+    )
 
 
 def upload_turtle(
