@@ -55,18 +55,23 @@ services:
       FUSEKI_PASSWORD: ${FUSEKI_ADMIN_PASSWORD}
       FUSEKI_URL: http://fuseki:3030
       FUSEKI_DATASET_NAME: ${FUSEKI_DATASET_NAME:-qualitylink}
-      MEILISEARCH_URL: ${MEILISEARCH_URL}
+      MEILISEARCH_URL: http://meili:7700
       MEILISEARCH_INDEX: ${MEILISEARCH_INDEX:-ql_courses}
       MEILISEARCH_API_KEY: ${MEILISEARCH_API_KEY}
+      MEILISEARCH_SEARCH_KEY: ${MEILISEARCH_SEARCH_KEY}
+      SEARCH_MAX_LIMIT: ${SEARCH_MAX_LIMIT:-100}
       SKILLDATA_API_URL: ${SKILLDATA_API_URL}
       SKILLDATA_API_KEY: ${SKILLDATA_API_KEY}
       SKILLDATA_API_TIMEOUT: ${SKILLDATA_API_TIMEOUT:-60}
       SKILLDATA_SKILL_LIMIT: ${SKILLDATA_SKILL_LIMIT:-5}
       SKILLDATA_MAX_DISTANCE: ${SKILLDATA_MAX_DISTANCE:-0.3}
+      ETER_API_URL: ${ETER_API_URL:-https://eter-project.com/api/4.0/}
+      ETER_API_TIMEOUT: ${ETER_API_TIMEOUT:-120}
     depends_on:
       - postgres
       - minio
       - fuseki
+      - meili
     restart: unless-stopped
 
   fuseki:
@@ -87,8 +92,17 @@ services:
       timeout: 10s
       retries: 3
 
+  meili:
+    image: getmeili/meilisearch:v1.49
+    volumes:
+      - meili_data:/meili_data
+    environment:
+      MEILI_MASTER_KEY: ${MEILISEARCH_API_KEY}
+      MEILI_ENV: production
+
 volumes:
   fuseki_data:
   postgres_data:
   minio_data:
+  meili_data:
 

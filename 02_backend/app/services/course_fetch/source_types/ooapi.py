@@ -80,6 +80,19 @@ class OoapiDataSource(DataSourceType):
         "schac_home": QL.Schac,
     }
 
+    # OOAPI v6 resultValueType → human label used as the GradingScheme title.
+    _RESULT_VALUE_TYPE_LABELS = {
+        "pass_or_fail":                   "Pass or fail",
+        "insufficient_satisfactory_good": "Insufficient / satisfactory / good",
+        "us_letter":                      "US letter (A–F)",
+        "uk_letter":                      "UK letter (A–E, U)",
+        "de_grade":                       "German scale (1–6)",
+        "grade_0_100":                    "Numeric 0–100",
+        "grade_0_10":                     "Numeric 0–10",
+        "grade_0_10_one_decimal":         "Numeric 0–10 (one decimal)",
+        "reference_level_europass":       "Europass reference level (A1–C2)",
+    }
+
     def _do_fetch(self, session):
         url = urljoin(self.source["path"], "courses")
         logger.info("OOAPI v%s request to %s", self.source["version"], url)
@@ -184,6 +197,32 @@ class OoapiDataSource(DataSourceType):
                     graph.add((subject, ELM.bannerImage, media))
                     return
 
+    def _add_supplementary_notes(self, graph: Graph, subject: URIRef, source: Dict) -> None:
+        """Walk supplementaryInformation[] non-image entries: text_* → elm:additionalNote, uri/video → elm:supplementaryDocument."""
+        _TEXT_TYPES = {"text_md", "text_plain", "text_http"}
+        _URL_TYPES = {"uri", "video"}
+        for item in (source.get("supplementaryInformation") or []):
+            if not isinstance(item, dict):
+                continue
+            item_type = item.get("type")
+            if item_type in _TEXT_TYPES:
+                text = self.extract_english_value(item.get("value"))
+                if not text:
+                    continue
+                note = BNode()
+                graph.add((note, RDF.type, ELM.Note))
+                graph.add((note, ELM.noteLiteral, Literal(text, lang="en")))
+                graph.add((subject, ELM.additionalNote, note))
+            elif item_type in _URL_TYPES:
+                for v in (item.get("value") or []):
+                    url = v.get("value") if isinstance(v, dict) else None
+                    if not url:
+                        continue
+                    doc = BNode()
+                    graph.add((doc, RDF.type, ELM.WebResource))
+                    graph.add((doc, ELM.contentUrl, Literal(url)))
+                    graph.add((subject, ELM.supplementaryDocument, doc))
+
     def _course_organisation_uuid(self, course: Dict) -> Optional[str]:
         """Extract organisation UUID from `organisationId` or expanded `organisation.organisationId`."""
         org_id = course.get("organisationId")
@@ -260,6 +299,13 @@ class OoapiDataSource(DataSourceType):
                         graph.add((lo_note, RDF.type, ELM.Note))
                         graph.add((lo_note, ELM.noteLiteral, Literal(lo_desc, lang="en")))
                         graph.add((lo, ELM.additionalNote, lo_note))
+                    if abbr := outcome.get('abbreviation'):
+                        graph.add((lo, SKOS.altLabel, Literal(abbr, lang="en")))
+                    if lo_field := outcome.get('fieldsOfStudy'):
+                        if uri := isced_f_code_to_uri(lo_field):
+                            graph.add((lo, ELM.ISCEDFCode, uri))
+                    for other in (outcome.get('otherCodes') or []):
+                        self._add_identifier_entry(graph, lo, other)
                 else:
                     graph.add((lo, DCTERMS.title, Literal(self.extract_english_value(outcome), lang="en")))
                 graph.add((course_uri, ELM.learningOutcome, lo))
@@ -336,6 +382,18 @@ class OoapiDataSource(DataSourceType):
 
         # supplementaryInformation: first type=image → bannerImage (sh:maxCount 1)
         self._add_first_banner_image(graph, course_uri, course)
+        # supplementaryInformation non-image entries → additionalNote / supplementaryDocument
+        self._add_supplementary_notes(graph, course_uri, course)
+
+        # resources[] → single additionalNote (free-text list of readings)
+        resources = course.get("resources")
+        if isinstance(resources, list):
+            items = [str(r).strip() for r in resources if isinstance(r, str) and r.strip()]
+            if items:
+                note = BNode()
+                graph.add((note, RDF.type, ELM.Note))
+                graph.add((note, ELM.noteLiteral, Literal("Resources:\n- " + "\n- ".join(items), lang="en")))
+                graph.add((course_uri, ELM.additionalNote, note))
 
         # Offerings of this course
 
@@ -460,5 +518,32 @@ class OoapiDataSource(DataSourceType):
                 graph.add((offering_uri, FOAF.homepage, web))
 
             self._add_first_banner_image(graph, offering_uri, offering)
+            self._add_supplementary_notes(graph, offering_uri, offering)
+
+            # flexibleEntryPeriodStartDateTime/EndDateTime → elm:scheduleInformation
+            # (single Note, sh:maxCount 1). Distinct from dcterms:temporal, which
+            # holds the offering's fixed start/end.
+            flex_start = offering.get("flexibleEntryPeriodStartDateTime")
+            flex_end = offering.get("flexibleEntryPeriodEndDateTime")
+            if flex_start or flex_end:
+                if flex_start and flex_end:
+                    text = f"Flexible entry: {flex_start} to {flex_end}"
+                elif flex_start:
+                    text = f"Flexible entry from {flex_start}"
+                else:
+                    text = f"Flexible entry until {flex_end}"
+                sched = BNode()
+                graph.add((sched, RDF.type, ELM.Note))
+                graph.add((sched, ELM.noteLiteral, Literal(text, lang="en")))
+                graph.add((offering_uri, ELM.scheduleInformation, sched))
+
+            # resultValueType → elm:gradingScheme (title-only GradingScheme)
+            rvt = offering.get("resultValueType")
+            rvt_label = self._RESULT_VALUE_TYPE_LABELS.get(rvt)
+            if rvt_label:
+                scheme = BNode()
+                graph.add((scheme, RDF.type, ELM.GradingScheme))
+                graph.add((scheme, DCTERMS.title, Literal(rvt_label, lang="en")))
+                graph.add((offering_uri, ELM.gradingScheme, scheme))
 
         return course_uuid

@@ -76,17 +76,19 @@ class EduApiDataSource(DataSourceType):
         "ext:eqf:8": _EQF[8],
     }
 
+    MODE_ONLINE = URIRef("http://data.europa.eu/snb/learning-assessment/920fbb3cbe") # Online
     MODE_MAP = {
-        "online":   URIRef("http://data.europa.eu/snb/learning-assessment/920fbb3cbe"), # Online
+        "online":   MODE_ONLINE, # Online
         "blended":  URIRef("http://data.europa.eu/snb/learning-assessment/c_3a90b26d"), # Hybrid
         "onGround": URIRef("http://data.europa.eu/snb/learning-assessment/9191af2ed9"), # Presential
     }
 
     # Only mappings with a confirmed EU snb learning-opportunity concept are
-    # listed here. Other courseType values (standard, honors, research,
-    # independentStudy, practicum, studyAbroad, capstone, clinical,
-    # correspondence, fieldExperience, seminar) fall through to COURSE_TYPE
-    # since the vocabulary fit hasn't been verified yet.
+    # listed here. Other courseType/offeringType values (standard, honors,
+    # research, independentStudy, practicum, studyAbroad, capstone, clinical,
+    # correspondence, fieldExperience, seminar) fall through to COURSE_TYPE.
+    # The concept URIs are opaque hex identifiers that need to be looked up
+    # from the EU snb learning-opportunity SKOS scheme once available.
     COURSE_TYPE_MAP = {
         "internship": URIRef("http://data.europa.eu/snb/learning-opportunity/77b99de990"),
         "thesis":     URIRef("http://data.europa.eu/snb/learning-opportunity/b2434ca358"),
@@ -307,18 +309,43 @@ class EduApiDataSource(DataSourceType):
                 if isinstance(lang_uri, URIRef):
                     graph.add((offering_uri, DCTERMS.language, lang_uri))
 
-            if offering.get("startDate") or offering.get("endDate") or offering.get("academicSessionCode"):
+            # Temporal: prefer offering's own start/end; else fall back to the
+            # linked academicSession's dates/title. academicSessionCode is used
+            # as a short label; the session's `title[]` (if present) enriches
+            # skos:prefLabel per language when the code alone is unhelpful.
+            session = offering.get("academicSession") if isinstance(offering.get("academicSession"), dict) else None
+            off_start = offering.get("startDate")
+            off_end = offering.get("endDate")
+            session_start = session.get("startDate") if session else None
+            session_end = session.get("endDate") if session else None
+            session_title = self.extract_english_value(session.get("title")) if session else ""
+            code = offering.get("academicSessionCode")
+
+            if off_start or off_end or session_start or session_end or code or session_title:
                 temporal = BNode()
                 graph.add((temporal, RDF.type, DCTERMS.PeriodOfTime))
-                if offering.get("startDate"):
-                    graph.add((temporal, ELM.startDate, Literal(offering.get("startDate"), datatype=get_date_datatype(offering.get("startDate")))))
-                if offering.get("endDate"):
-                    graph.add((temporal, ELM.endDate, Literal(offering.get("endDate"), datatype=get_date_datatype(offering.get("endDate")))))
-                if offering.get("academicSessionCode"):
-                    graph.add((temporal, SKOS.prefLabel, Literal(offering.get("academicSessionCode"))))
+                if effective_start := off_start or session_start:
+                    graph.add((temporal, ELM.startDate, Literal(effective_start, datatype=get_date_datatype(effective_start))))
+                if effective_end := off_end or session_end:
+                    graph.add((temporal, ELM.endDate, Literal(effective_end, datatype=get_date_datatype(effective_end))))
+                if code:
+                    graph.add((temporal, SKOS.prefLabel, Literal(code)))
+                if session_title:
+                    graph.add((temporal, SKOS.prefLabel, Literal(session_title, lang="en")))
                 graph.add((offering_uri, DCTERMS.temporal, temporal))
 
+            # offeringType (same enum as courseType) → dcterms:type on the LOI.
+            # LOS keeps its own type; the LOI type reflects the delivery form.
+            if offering.get("offeringType") in self.COURSE_TYPE_MAP:
+                graph.add((offering_uri, DCTERMS.type, self.COURSE_TYPE_MAP[offering["offeringType"]]))
+
             self._value_to_concept(offering, "offeringFormat", graph, offering_uri, ELM.mode, self.MODE_MAP)
+
+            # synchronicity refines elm:mode: fully-async delivery reads as "online",
+            # unless offeringFormat is already defined. Other values (synchronous, hybrid) add
+            # no signal beyond what offeringFormat conveys.
+            if offering.get("synchronicity") == "asynchronous" and (offering_uri, ELM.mode, None) not in graph:
+                graph.add((offering_uri, ELM.mode, self.MODE_ONLINE))
 
             self._value_to_literal(offering, "maxNumberStudents",       graph, offering_uri, QL.enrolmentCapacity,      datatype=XSD.nonNegativeInteger)
             self._value_to_literal(offering, "enrolledNumberStudents",  graph, offering_uri, QL.enrolledLearnerCount,   datatype=XSD.nonNegativeInteger)

@@ -51,7 +51,8 @@ QL-Pipeline provides:
 - **Provider registry** seeded from the DEQAR API and stored in PostgreSQL
 - **Discovery of data source** manifests via DNS TXT records and `.well-known` URLs
 - **ETL pipeline** (bronze → silver → gold) running in-process in the backend, with optional AI enrichment in silver (Skilldata `analyze_course` API) to back-fill learning outcomes, ESCO skill matches, ISCED-F and language
-- **RDF storage** in Jena Fuseki with three named graphs (courses, reference, vocabulary)
+- **RDF storage** in Jena Fuseki with four named graphs (courses, reference, vocabulary, stats)
+- **EHESO indicators** — student-to-staff ratios per institution and per ISCED-F broad field, resolved onto each course in gold
 - **Full-text search** via Meilisearch
 - **Data lake** in MinIO for raw source snapshots
 - **Signing keypair** served publicly so providers can verify QL-signed payloads
@@ -191,11 +192,11 @@ PostgreSQL is initialised from `00_postgres/00_init.sql` with additive migration
 
 ### Backend (FastAPI)
 Hosts both the REST API and the in-process ETL pipeline. Key modules:
-- `routers/` — thin HTTP adapters (`health`, `providers`, `manifest`, `datalake`, `credentials`)
-- `services/` — business logic (`manifest`, `providers`, `deqar`, `datalake`, `course_fetch/*`, `fuseki`, `keys`, `locks`, `vocabulary`)
+- `routers/` — thin HTTP adapters (`health`, `providers`, `manifest`, `datalake`, `credentials`, `search`)
+- `services/` — business logic (`manifest`, `providers`, `deqar`, `datalake`, `course_fetch/*`, `fuseki`, `keys`, `locks`, `vocabulary`, `search`)
 - `cli.py` — Typer admin CLI (see [Admin CLI](#admin-cli))
 
-A separate public sub-app is mounted at `/api/v1` with wildcard CORS so any provider domain can fetch the public key.
+A separate public sub-app is mounted at `/api/v1` with wildcard CORS, hosting the routes that are meant to be reachable from any origin: the public key (fetched by provider domains) and the read-only Meilisearch search proxy. The main app's CORS middleware (`ScopedCORSMiddleware`) deliberately skips `/api/v1/*` so those preflights are answered by the sub-app's wildcard policy instead of being rejected as foreign origins.
 
 ### PostgreSQL
 Operational database. Schema is baked into the image from `00_postgres/*.sql`. Concurrency control (e.g. preventing overlapping manifest pulls for the same provider) uses session-scoped advisory locks via `pg_try_advisory_lock(ns, hashtext(key))`.
@@ -217,10 +218,46 @@ S3-compatible data lake. Raw source snapshots are organised as:
 Per-run metadata (status, bronze file path, log file path, error message, …) lives in the `transaction` table; the data-lake layout no longer duplicates a `source_manifest.json`.
 
 ### Apache Jena Fuseki
-Triplestore with TDB2 backend, using three named graphs:
+Triplestore with TDB2 backend, using four named graphs:
 - **courses** — provider-ingested course data
 - **reference** — DEQAR-sourced provider registry
 - **vocabulary** — EU controlled vocabularies (ISCED-F, EQF levels, languages, …)
+- **stats** — externally-sourced indicators about institutions, currently EHESO/ETER
+  student-to-staff ratios. Kept out of `reference` so registry refreshes and
+  indicator refreshes cannot overwrite one another.
+
+### EHESO indicators
+
+Indicators are retrieved from the European Higher Education Sector Observatory (EHESO, previously ETER),
+a public Europe-wide data source that includes [institution-level micro-data](https://national-policies.eacea.ec.europa.eu/eheso/micro-data-access).
+
+`python cli.py eter fetch --year YYYY` pulls student and academic-staff counts
+from the [EHESO micro-data API](https://eter-project.com/data/technical-documentation/general-api-information/)
+(open data, no credentials), caches the raw payload in MinIO, derives
+student-to-staff ratios, and writes them to the stats graph. It is **manual** —
+nothing schedules it — and each run covers one reference year, with later years
+winning at resolve time.
+
+There is deliberately no database table: the MinIO cache holds the untransformed
+payload (so a re-derive after a formula change never re-hits the API) and Fuseki
+holds the derived ratios (so what you can query is exactly what serves the
+pipeline). Use `eter show <provider>` to inspect what is stored.
+
+Ratios reach Meilisearch through the gold stage, which picks the closest match
+per course — the ISCED-F broad-field ratio when the course has one EHESO covers
+(averaged across fields when the course spans several), otherwise the
+institution-wide figure. So after a fetch, run `course reindex --all` (or pass
+`--reindex`) to push the new values into the index.
+
+Note that EHESO allocates students by programme field but staff by the staff
+member's own field, so the two breakdowns disagree wherever one department
+teaches another's students. Field-level ratios are therefore dropped when an
+institution's staff breakdown covers less than 80% of its academic headcount, or
+when a field ratio departs from that institution's overall ratio by more than a
+factor of 5. `eter fetch` reports both counts. Institution-wide ratios are never
+filtered — they are a faithful division of two reported totals, and the extremes
+are real (a mega open university genuinely runs at four figures per staff
+member).
 
 ### Meilisearch
 Full-text search index over the framed JSON-LD course documents. Expected to run externally in production; run it locally via `docker-compose.override.yml`.
@@ -263,6 +300,22 @@ GET  /api/v1/public-key/pem    # PEM as text/plain
 ```
 Wildcard CORS — any provider domain can fetch the active signing key.
 
+### Search (public sub-app at `/api/v1`)
+```
+POST /api/v1/search            # Meilisearch search body, e.g. {"q": "data science", "limit": 20}
+GET  /api/v1/search?q=…        # same, using Meilisearch's query-string form
+```
+A read-only proxy to the search endpoint of the configured index (`MEILISEARCH_INDEX`). Meilisearch
+exposes no ports in production, so this is how public clients — such as the
+[course catalogue](https://github.com/Knowledge-Innovation-Centre/course-catalogue) — reach the
+index. Request parameters and Meilisearch's response (including its error bodies) are passed
+through, except that `limit` / `hitsPerPage` are capped at `SEARCH_MAX_LIMIT` (default 100).
+
+The proxy authenticates with `MEILISEARCH_SEARCH_KEY`, which must be a **search-only** key scoped
+to the index (see `.example.env` for the `curl` that mints one). It never falls back to the master
+key `MEILISEARCH_API_KEY`: while the search key is unset the endpoint returns 503. There is no
+rate limiting in the app — apply it at the reverse proxy.
+
 ## Admin CLI
 
 The Typer CLI is the preferred way to drive provider operations manually (runs in-process, so no HTTP/BackgroundTask round-trip).
@@ -288,7 +341,15 @@ docker-compose run --rm backend python cli.py provider fetch    <UUID|ETER_ID|DE
 ```bash
 python cli.py course list  <UUID|ETER_ID|DEQAR_ID>                                       # list courses from Fuseki
 python cli.py course frame <URI|UUID>                                                    # get framed JSON-LD for a single course
+python cli.py course purge [<URI|UUID>] [--provider <UUID|ETER_ID|DEQAR_ID>] [--all]     # delete courses from Fuseki + Meilisearch
 ```
+
+`course purge` deletes each course's triples (the specification, its learning
+opportunity instances, their blank nodes and the `urn:uuid:` alias) from the Fuseki
+courses graph and the framed documents from the Meilisearch index. Bronze files in
+MinIO and the Postgres source/transaction state are left alone, so `course silver`
+re-creates the courses from the last download. Use `--dry-run` to list the targets
+first; `--all` drops the whole courses graph and empties the index.
 
 Provider identifiers accept a UUID, ETER id, or DEQAR id — they're resolved via `services.providers.resolve_provider_uuid`.
 
@@ -467,10 +528,10 @@ SELECT * FROM pg_locks WHERE locktype='advisory';
 ## Security Considerations
 
 - Change all default passwords in `.env` before deployment.
-- The main app's CORS is restricted to the configured frontend origin; the `/api/v1` sub-app (public key) uses wildcard CORS — do not add other routes there.
-- Place services behind a reverse proxy (Caddy, nginx, Coolify) for TLS termination.
+- The main app's CORS is restricted to the configured frontend origin; the `/api/v1` sub-app uses wildcard CORS — only intentionally public, unauthenticated, read-only routes belong there.
+- Place services behind a reverse proxy (Caddy, nginx, Coolify) for TLS termination, and rate-limit `/api/v1/search` there — the app itself does not.
 - Do not expose the MinIO console publicly in production.
-- Use separate read-only Meilisearch keys for frontend search operations; the backend needs a key with index/write permissions.
+- Keep the Meilisearch keys separate: `MEILISEARCH_SEARCH_KEY` (search action only, index-scoped) is what the public proxy sends; `MEILISEARCH_API_KEY` needs index/write permissions and must stay server-side.
 
 ## Branching
 

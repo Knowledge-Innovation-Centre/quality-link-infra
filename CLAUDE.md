@@ -16,7 +16,7 @@ Five Docker services orchestrated via `docker-compose.yml`, designed for Coolify
 - **Backend** (`02_backend/`) — FastAPI REST API + Typer admin CLI; hosts the ETL pipeline in-process
 - **PostgreSQL** (`00_postgres/`) — operational database; schema baked into the image via `00_init.sql` + migration files `0N_*.sql`
 - **MinIO** — S3-compatible data lake
-- **Jena Fuseki** — RDF triplestore (three named graphs: courses, reference, vocabulary)
+- **Jena Fuseki** — RDF triplestore (four named graphs: courses, reference, vocabulary, stats)
 
 Meilisearch is expected to run externally in production; add it via `docker-compose.override.yml` for local dev (see README). There is no longer a separate MageAI or Dragonfly/Redis service — ETL runs in-process in the backend, and per-provider concurrency is guarded by Postgres advisory locks.
 
@@ -24,9 +24,9 @@ Meilisearch is expected to run externally in production; add it via `docker-comp
 
 The backend is modular, not a single-file app. Layout:
 
-- `main.py` — FastAPI app factory. Mounts `routers/` and a separate public sub-app at `/api/v1` with wildcard CORS for the `credentials` router (so provider domains can fetch the QL public key).
+- `main.py` — FastAPI app factory. Mounts `routers/` and a separate public sub-app at `/api/v1` with wildcard CORS for the `credentials` router (so provider domains can fetch the QL public key) and the `search` router (public read-only Meilisearch proxy).
 - `cli.py` — Typer CLI entry point; assembles the groups defined under `cli/` (`provider`, `vocabulary`, `course`).
-- `cli/` — per-group command modules: `providers.py` (list / manifest / sources / refresh), `vocabulary.py` (fetch), `courses.py` (list / frame / fetch / silver / reindex — the course-pipeline ops).
+- `cli/` — per-group command modules: `providers.py` (list / manifest / sources / refresh), `vocabulary.py` (fetch), `courses.py` (list / frame / fetch / silver / reindex — the course-pipeline ops), `eter.py` (fetch / show — ETER indicators).
 - `config.py` — env-var loading (DB, MinIO, Fuseki, Meilisearch, DEQAR, default vocabularies, graph IRIs).
 - `database.py` — SQLAlchemy engine + `SessionLocal`. Use `get_db` (FastAPI dep) in routers; open `SessionLocal()` directly in CLI commands and background tasks.
 - `routers/` — HTTP adapters only; delegate to services.
@@ -36,6 +36,9 @@ The backend is modular, not a single-file app. Layout:
   - `deqar.py` — refresh provider registry from DEQAR and push to the Fuseki reference graph.
   - `datalake.py` — `queue_provider_data`: validates a fetch request (lock state, version freshness) and schedules `run_course_fetch` via `BackgroundTasks`.
   - `course_fetch/` — the ETL pipeline: `bronze.py` downloads raw source data to MinIO, `silver.py` enriches to RDF and writes to Fuseki, `gold.py` frames JSON-LD and indexes into Meilisearch. Per-source-type adapters live in `course_fetch/source_types/` (`elm`, `ooapi`, `edu-api`).
+  - `eter.py` — ETER API client, MinIO raw-payload cache, student-to-staff ratio derivation, and the push into the Fuseki stats graph. **No Postgres table by design** — MinIO holds the raw payload and Fuseki the derived ratios; don't "fix" the missing table.
+  - `course_fetch/ratio.py` — gold-time resolution of the closest-matching ratio for a framed course.
+  - `search.py` — read-only proxy to the Meilisearch `search` endpoint of `MEILISEARCH_INDEX`, using the search-only `MEILISEARCH_SEARCH_KEY` (never the master key; 503 if unset). Backs `GET|POST /api/v1/search`.
   - `fuseki.py`, `keys.py`, `locks.py`, `vocabulary.py` — Fuseki client, `ql_cred` keypair management, advisory-lock helpers, EU controlled-vocabulary fetcher.
 - `schema/frame.json` — JSON-LD frame used by the gold stage.
 
@@ -49,7 +52,7 @@ Concurrency control uses **Postgres advisory locks** (`services/locks.py`), not 
 
 1. **Bronze** — fetch raw data from the provider source, write to MinIO at `{bucket}/courses/{provider_uuid}/{source_version_uuid}/{source_uuid}/{YYYY-MM-DD}/...`.
 2. **Silver** — parse into an RDF graph, enrich against the reference graph, and (when `SKILLDATA_API_URL` is set) call the Skilldata `analyze_course` API per course to fill missing learning outcomes / ESCO skills / ISCED-F / language; AI-populated predicates are recorded as `ql:aiEnrichedField`. Upload to Fuseki's courses graph.
-3. **Gold** — SPARQL → JSON-LD frame (`schema/frame.json`) → flat docs → Meilisearch index.
+3. **Gold** — SPARQL → JSON-LD frame (`schema/frame.json`) → flat docs → Meilisearch index. Also resolves the closest-matching ETER student-to-staff ratio from the stats graph (ISCED-F broad field if covered, else institution-wide) into `studentStaffRatio` on each doc.
 4. Log a row in `transaction` (unique per provider+version+date).
 
 ### Database schema
@@ -105,6 +108,7 @@ python cli.py course frame    <URI|UUID>                  # get framed JSON-LD f
 python cli.py course fetch    <UUID|ETER_ID|DEQAR_ID> [--source SOURCE_UUID]    # bronze→silver→gold
 python cli.py course silver   [<UUID|ETER_ID|DEQAR_ID>] [--source SOURCE_UUID] [--all]  # re-run silver from latest bronze
 python cli.py course reindex  [<URI|UUID>] [--provider <UUID|ETER_ID|DEQAR_ID>] [--all]  # re-run gold / Meilisearch
+python cli.py course purge    [<URI|UUID>] [--provider <UUID|ETER_ID|DEQAR_ID>] [--all] [--dry-run]  # delete from Fuseki + Meilisearch
 python cli.py provider list   [SEARCH] [--with-data] [--page N] [--page-size N]
 python cli.py provider manifest <UUID|ETER_ID|DEQAR_ID>   # DNS + .well-known discovery
 python cli.py provider sources  <UUID|ETER_ID|DEQAR_ID>   # show probes + latest version's sources
@@ -113,7 +117,19 @@ python cli.py provider oauth set    <UUID|ETER_ID|DEQAR_ID> --endpoint URL --cli
 python cli.py provider oauth list   <UUID|ETER_ID|DEQAR_ID>                  # show stored OAuth creds (secret masked)
 python cli.py provider oauth delete <UUID|ETER_ID|DEQAR_ID> --endpoint URL
 python cli.py vocabulary fetch  [SCHEME_URI ...]          # defaults to DEFAULT_VOCABULARIES
+
+python cli.py eter fetch --year YYYY [--country CC] [--from-cache] [--dry-run] [--reindex]
+python cli.py eter show  <UUID|ETER_ID|DEQAR_ID>          # stored ratios, all years and scopes
 ```
+
+`eter fetch` is manual and covers one reference year per run; ratios only reach
+Meilisearch on the next `course reindex`.
+
+`course purge` removes courses from the Fuseki courses graph and the Meilisearch
+index only — MinIO bronze files and the Postgres `source`/`transaction` state are
+untouched, so `course silver` re-creates what was purged. `--provider` matches on
+`dcterms:publisher`, so a course whose publisher was never set is only reachable via
+`--all` (which drops the graph and empties the index outright).
 
 Or run inside the container: `docker-compose exec backend python cli.py ...`.
 
@@ -124,7 +140,7 @@ Or run inside the container: `docker-compose exec backend python cli.py ...`.
 - **Database access** uses SQLAlchemy with raw `text()` SQL — no ORM models. Parameterize everything.
 - **Sessions**: HTTP handlers use `Depends(get_db)`; CLI commands and background tasks open their own `SessionLocal()` via `with` blocks.
 - **Provider identifiers**: services that take a provider accept a UUID; the CLI resolves UUID / ETER id / DEQAR id via `services.providers.resolve_provider_uuid`.
-- **CORS**: the main app allows the configured frontend origin; the `/api/v1` sub-app (public key) uses wildcard CORS — don't add other routes to it.
+- **CORS**: the main app allows the configured frontend origin; the `/api/v1` sub-app uses wildcard CORS (no credentials) — only intentionally public, unauthenticated, read-only routes belong there (today: public key, search proxy). The main app wraps `ScopedCORSMiddleware` (`main.py`), which passes `/api/v1/*` through untouched — stock `CORSMiddleware` answers every preflight itself and would 400 foreign origins before the sub-app ever sees them.
 
 ### Frontend
 - Path alias `@/` → `src/`. Pages in `src/pages/`, feature components in `src/components/features/`, reusable UI in `src/components/ui/`, API clients in `src/api/`, hooks in `src/hooks/`, types in `src/types/`.

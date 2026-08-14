@@ -26,10 +26,18 @@ FUSEKI_DATASET_NAME = os.getenv("FUSEKI_DATASET_NAME")
 MEILISEARCH_URL = os.getenv("MEILISEARCH_URL", "http://meilisearch:7700")
 MEILISEARCH_API_KEY = os.getenv("MEILISEARCH_API_KEY")
 MEILISEARCH_INDEX = os.getenv("MEILISEARCH_INDEX")
+# Search-only key used by the public search proxy. Never falls back to
+# MEILISEARCH_API_KEY (which is the master key) — see services/search.py.
+MEILISEARCH_SEARCH_KEY = os.getenv("MEILISEARCH_SEARCH_KEY")
+MEILISEARCH_TIMEOUT = int(os.getenv("MEILISEARCH_TIMEOUT", "10"))
+SEARCH_MAX_LIMIT = int(os.getenv("SEARCH_MAX_LIMIT", "100"))
 
 DEQAR_API_URL = os.getenv(
     "DEQAR_API_URL", "https://backend.testzone.eqar.eu/connectapi/v1/providers/"
 )
+
+ETER_API_URL = os.getenv("ETER_API_URL", "https://eter-project.com/api/4.0/")
+ETER_API_TIMEOUT = int(os.getenv("ETER_API_TIMEOUT", "120"))
 
 SKILLDATA_API_URL = os.getenv("SKILLDATA_API_URL")
 SKILLDATA_API_KEY = os.getenv("SKILLDATA_API_KEY")
@@ -40,6 +48,7 @@ SKILLDATA_MAX_DISTANCE = float(os.getenv("SKILLDATA_MAX_DISTANCE", "0.3"))
 GRAPH_COURSES = "http://data.quality-link.eu/graph/courses"
 GRAPH_REFERENCE = "http://data.quality-link.eu/graph/reference"
 GRAPH_VOCABULARY = "http://data.quality-link.eu/graph/vocabulary"
+GRAPH_STATS = "http://data.quality-link.eu/graph/stats"
 
 DEFAULT_VOCABULARIES = [
     # Each entry: {"scheme": <uri>, "properties": [<extra prop uri>, ...]}.

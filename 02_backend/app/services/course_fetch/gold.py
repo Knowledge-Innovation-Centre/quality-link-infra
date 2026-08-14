@@ -10,6 +10,7 @@ from config import (
     MEILISEARCH_URL,
 )
 from services import fuseki
+from services.course_fetch.ratio import resolve_student_staff_ratio
 from services.courses import (
     CourseNotFound,
     frame_course,
@@ -48,15 +49,17 @@ def reindex_course(
             logger.warning("Resolve failed for %s: %s", course_uuid, e)
             return False
 
+    # framed["id"] is read inside the try: frame_course guarantees a single
+    # top-level node, but a malformed frame would otherwise raise KeyError here
+    # and escape all the way out of index_gold, failing the whole run.
     try:
         framed = frame_course(course_uri)
+        framed.pop("@context", None)
+        framed["uri"] = framed["id"]
+        framed["id"] = course_uuid
     except Exception as e:
         logger.warning("Framing failed for %s: %s", course_uuid, e)
         return False
-
-    framed.pop("@context", None)
-    framed["uri"] = framed["id"]
-    framed["id"] = course_uuid
 
     if "elm:learningOpportunity" in framed and isinstance(framed["elm:learningOpportunity"], list):
         count = len(framed["elm:learningOpportunity"])
@@ -64,11 +67,74 @@ def reindex_course(
             framed["instanceCount"] = len(framed["elm:learningOpportunity"])
 
     try:
+        ratio = resolve_student_staff_ratio(framed, session=session)
+        if ratio is not None:
+            framed["studentStaffRatio"] = ratio
+    except Exception as e:
+        # Enrichment must never cost a course its index entry.
+        logger.warning("Student-staff ratio lookup failed for %s: %s", course_uuid, e)
+
+    try:
         r = session.post(_meili_url(), headers=_meili_headers(), json=framed, timeout=30)
         r.raise_for_status()
         return True
     except Exception as e:
         logger.warning("Meilisearch upload failed for %s: %s", course_uuid, e)
+        return False
+
+
+def delete_courses_from_index(
+    session: requests.Session,
+    course_uuids: List[str],
+    batch_size: int = 1000,
+) -> tuple[int, int]:
+    """Delete framed course documents from Meilisearch by primary key.
+
+    The index primary key is the bare course UUID (see `reindex_course`), so the
+    UUIDs enumerated from Fuseki are the document ids. Returns
+    (deleted, failed) counted per document, where a failed batch counts all of its
+    documents as failed.
+
+    Meilisearch deletion is asynchronous: this enqueues a task per batch and does
+    not wait for it, so documents may briefly remain searchable. The add path does
+    not poll tasks either.
+    """
+    if not course_uuids:
+        return 0, 0
+
+    deleted = 0
+    failed = 0
+    for start in range(0, len(course_uuids), batch_size):
+        batch = course_uuids[start:start + batch_size]
+        try:
+            r = session.post(
+                f"{_meili_url()}/delete-batch",
+                headers=_meili_headers(),
+                json=batch,
+                timeout=30,
+            )
+            r.raise_for_status()
+            deleted += len(batch)
+        except Exception as e:
+            logger.warning(
+                "Meilisearch delete failed for %s document(s): %s", len(batch), e
+            )
+            failed += len(batch)
+
+    return deleted, failed
+
+
+def delete_all_documents(session: requests.Session) -> bool:
+    """Delete every document from the Meilisearch index, keeping index settings.
+
+    Asynchronous like `delete_courses_from_index` — the task is enqueued, not awaited.
+    """
+    try:
+        r = session.delete(_meili_url(), headers=_meili_headers(), timeout=30)
+        r.raise_for_status()
+        return True
+    except Exception as e:
+        logger.warning("Meilisearch delete-all failed: %s", e)
         return False
 
 
