@@ -67,6 +67,75 @@ def sparql_update(
     return True
 
 
+def _subject_delete_blocks(
+    graph_uri: str,
+    subject_uri: str,
+    *,
+    delete_alias: bool,
+) -> list:
+    """The SPARQL Update statements removing one subject from <graph_uri>.
+
+    Covers the subject itself, each elm:learningOpportunity instance it points to,
+    and up to 3 levels of blank-node descendants of either. Returned as separate
+    statements so callers can join them with ` ;` and optionally append their own
+    (see `replace_subject_in_graph`).
+
+    Deepest blank nodes first, and roots bound through `VALUES ?root` rather than a
+    property path over the whole graph — both deliberate for query performance.
+    """
+    blocks = [
+        f"""# depth 3 — deepest blank nodes first
+WITH <{graph_uri}>
+DELETE {{ ?b3 ?p ?o }}
+WHERE {{
+  VALUES ?root {{ <{subject_uri}> }}
+  ?root elm:learningOpportunity? ?a .
+  ?a  ?q1 ?b1 . FILTER(isBlank(?b1))
+  ?b1 ?q2 ?b2 . FILTER(isBlank(?b2))
+  ?b2 ?q3 ?b3 . FILTER(isBlank(?b3))
+  ?b3 ?p ?o .
+}}""",
+        f"""# depth 2
+WITH <{graph_uri}>
+DELETE {{ ?b2 ?p ?o }}
+WHERE {{
+  VALUES ?root {{ <{subject_uri}> }}
+  ?root elm:learningOpportunity? ?a .
+  ?a  ?q1 ?b1 . FILTER(isBlank(?b1))
+  ?b1 ?q2 ?b2 . FILTER(isBlank(?b2))
+  ?b2 ?p ?o .
+}}""",
+        f"""# depth 1
+WITH <{graph_uri}>
+DELETE {{ ?b1 ?p ?o }}
+WHERE {{
+  VALUES ?root {{ <{subject_uri}> }}
+  ?root elm:learningOpportunity? ?a .
+  ?a ?q1 ?b1 . FILTER(isBlank(?b1))
+  ?b1 ?p ?o .
+}}""",
+        f"""# the anchors themselves: root + its learning opportunities
+WITH <{graph_uri}>
+DELETE {{ ?a ?p ?o }}
+WHERE {{
+  VALUES ?root {{ <{subject_uri}> }}
+  ?root elm:learningOpportunity? ?a .
+  ?a ?p ?o .
+}}""",
+    ]
+
+    if delete_alias:
+        blocks.append(f"""# delete alias
+WITH <{graph_uri}>
+DELETE {{ ?alias owl:sameAs ?root . }}
+WHERE {{
+  VALUES ?root {{ <{subject_uri}> }}
+  ?alias owl:sameAs ?root .
+}}""")
+
+    return blocks
+
+
 def replace_subject_in_graph(
     graph_uri: str,
     subject_uri: str,
@@ -90,75 +159,77 @@ def replace_subject_in_graph(
     else:
         alias_nt = ""
 
-    if alias_replace:
-        alias_delete = f"""
-WITH <{graph_uri}>
-DELETE {{ ?alias owl:sameAs ?root . }}
-WHERE {{
-  VALUES ?root {{ <{subject_uri}> }}
-  ?alias owl:sameAs ?root .
-}} ;
-"""
-    else:
-        alias_delete = ""
-
-    sparql = f"""
-PREFIX owl: <{OWL}>
-PREFIX elm: <{ELM}>
-
-# depth 3 — deepest blank nodes first
-WITH <{graph_uri}>
-DELETE {{ ?b3 ?p ?o }}
-WHERE {{
-  VALUES ?root {{ <{subject_uri}> }}
-  ?root elm:learningOpportunity? ?a .
-  ?a  ?q1 ?b1 . FILTER(isBlank(?b1))
-  ?b1 ?q2 ?b2 . FILTER(isBlank(?b2))
-  ?b2 ?q3 ?b3 . FILTER(isBlank(?b3))
-  ?b3 ?p ?o .
-}} ;
-# depth 2
-WITH <{graph_uri}>
-DELETE {{ ?b2 ?p ?o }}
-WHERE {{
-  VALUES ?root {{ <{subject_uri}> }}
-  ?root elm:learningOpportunity? ?a .
-  ?a  ?q1 ?b1 . FILTER(isBlank(?b1))
-  ?b1 ?q2 ?b2 . FILTER(isBlank(?b2))
-  ?b2 ?p ?o .
-}} ;
-# depth 1
-WITH <{graph_uri}>
-DELETE {{ ?b1 ?p ?o }}
-WHERE {{
-  VALUES ?root {{ <{subject_uri}> }}
-  ?root elm:learningOpportunity? ?a .
-  ?a ?q1 ?b1 . FILTER(isBlank(?b1))
-  ?b1 ?p ?o .
-}} ;
-# the anchors themselves: root + its learning opportunities
-WITH <{graph_uri}>
-DELETE {{ ?a ?p ?o }}
-WHERE {{
-  VALUES ?root {{ <{subject_uri}> }}
-  ?root elm:learningOpportunity? ?a .
-  ?a ?p ?o .
-}} ;
-# delete alias
-{alias_delete}
-# insert new data
+    blocks = _subject_delete_blocks(
+        graph_uri, subject_uri, delete_alias=bool(alias_replace)
+    )
+    blocks.append(f"""# insert new data
 INSERT DATA {{
   GRAPH <{graph_uri}> {{
     {triples_nt}
     {alias_nt}
   }}
-}}
-"""
+}}""")
+
+    sparql = f"""
+PREFIX owl: <{OWL}>
+PREFIX elm: <{ELM}>
+
+""" + " ;\n".join(blocks) + "\n"
+
     return sparql_update(
         sparql,
         session=session,
         timeout=timeout,
         context=f"for <{subject_uri}> in <{graph_uri}>",
+    )
+
+
+def delete_subject_in_graph(
+    graph_uri: str,
+    subject_uri: str,
+    *,
+    delete_alias: bool = True,
+    session: Optional[requests.Session] = None,
+    timeout: int = 60,
+) -> bool:
+    """Remove one subject from <graph_uri> without inserting a replacement.
+
+    Same cascade as `replace_subject_in_graph` minus the INSERT: the subject, its
+    elm:learningOpportunity instances, their blank-node descendants, and (unless
+    `delete_alias=False`) any `<alias> owl:sameAs <subject>` triple. Dropping the
+    alias matters — otherwise `resolve_course_uri`/`resolve_course_uuid` keep
+    resolving a course whose triples are gone.
+
+    Returns True on success.
+    """
+    sparql = f"""
+PREFIX owl: <{OWL}>
+PREFIX elm: <{ELM}>
+
+""" + " ;\n".join(
+        _subject_delete_blocks(graph_uri, subject_uri, delete_alias=delete_alias)
+    ) + "\n"
+
+    return sparql_update(
+        sparql,
+        session=session,
+        timeout=timeout,
+        context=f"deleting <{subject_uri}> from <{graph_uri}>",
+    )
+
+
+def drop_graph(
+    graph_uri: str,
+    *,
+    session: Optional[requests.Session] = None,
+    timeout: int = 300,
+) -> bool:
+    """DROP an entire named graph. Returns True on success."""
+    return sparql_update(
+        f"DROP GRAPH <{graph_uri}>",
+        session=session,
+        timeout=timeout,
+        context=f"dropping <{graph_uri}>",
     )
 
 

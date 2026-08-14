@@ -325,7 +325,15 @@ docker-compose run --rm backend python cli.py provider fetch    <UUID|ETER_ID|DE
 ```bash
 python cli.py course list  <UUID|ETER_ID|DEQAR_ID>                                       # list courses from Fuseki
 python cli.py course frame <URI|UUID>                                                    # get framed JSON-LD for a single course
+python cli.py course purge [<URI|UUID>] [--provider <UUID|ETER_ID|DEQAR_ID>] [--all]     # delete courses from Fuseki + Meilisearch
 ```
+
+`course purge` deletes each course's triples (the specification, its learning
+opportunity instances, their blank nodes and the `urn:uuid:` alias) from the Fuseki
+courses graph and the framed documents from the Meilisearch index. Bronze files in
+MinIO and the Postgres source/transaction state are left alone, so `course silver`
+re-creates the courses from the last download. Use `--dry-run` to list the targets
+first; `--all` drops the whole courses graph and empties the index.
 
 Provider identifiers accept a UUID, ETER id, or DEQAR id — they're resolved via `services.providers.resolve_provider_uuid`.
 

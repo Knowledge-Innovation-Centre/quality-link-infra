@@ -107,6 +107,7 @@ python cli.py course frame    <URI|UUID>                  # get framed JSON-LD f
 python cli.py course fetch    <UUID|ETER_ID|DEQAR_ID> [--source SOURCE_UUID]    # bronze→silver→gold
 python cli.py course silver   [<UUID|ETER_ID|DEQAR_ID>] [--source SOURCE_UUID] [--all]  # re-run silver from latest bronze
 python cli.py course reindex  [<URI|UUID>] [--provider <UUID|ETER_ID|DEQAR_ID>] [--all]  # re-run gold / Meilisearch
+python cli.py course purge    [<URI|UUID>] [--provider <UUID|ETER_ID|DEQAR_ID>] [--all] [--dry-run]  # delete from Fuseki + Meilisearch
 python cli.py provider list   [SEARCH] [--with-data] [--page N] [--page-size N]
 python cli.py provider manifest <UUID|ETER_ID|DEQAR_ID>   # DNS + .well-known discovery
 python cli.py provider sources  <UUID|ETER_ID|DEQAR_ID>   # show probes + latest version's sources
@@ -122,6 +123,12 @@ python cli.py eter show  <UUID|ETER_ID|DEQAR_ID>          # stored ratios, all y
 
 `eter fetch` is manual and covers one reference year per run; ratios only reach
 Meilisearch on the next `course reindex`.
+
+`course purge` removes courses from the Fuseki courses graph and the Meilisearch
+index only — MinIO bronze files and the Postgres `source`/`transaction` state are
+untouched, so `course silver` re-creates what was purged. `--provider` matches on
+`dcterms:publisher`, so a course whose publisher was never set is only reachable via
+`--all` (which drops the graph and empties the index outright).
 
 Or run inside the container: `docker-compose exec backend python cli.py ...`.
 
