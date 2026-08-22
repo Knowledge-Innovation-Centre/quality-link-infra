@@ -9,6 +9,8 @@ services:
         VITE_RECAPTCHA_SITE_KEY: ${VITE_RECAPTCHA_SITE_KEY}
         VITE_API_URL: ${VITE_API_URL}
         VITE_RECAPTCHA_ENABLED: ${VITE_RECAPTCHA_ENABLED:-true}
+    healthcheck:
+      test: [ "CMD", "wget", "-O/dev/null", "-q", "http://localhost:3000" ]
     restart: unless-stopped
     environment:
       VITE_API_URL: ${VITE_API_URL}
@@ -23,6 +25,8 @@ services:
       POSTGRES_USER: quality_link
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: backend
+    healthcheck:
+      test: [ "CMD", "nc", "-z", "localhost", "5432" ]
     volumes:
       - postgres_data:/var/lib/postgresql
     restart: unless-stopped
@@ -34,6 +38,8 @@ services:
       MINIO_ROOT_USER: admin
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
     command: minio server /data --console-address "0.0.0.0:9001"
+    healthcheck:
+      test: [ "CMD", "curl", "-f" , "http://localhost:9001" ]
     volumes:
       - minio_data:/data
     restart: unless-stopped
@@ -41,6 +47,8 @@ services:
   backend:
     build:
       context: ./02_backend
+    healthcheck:
+      test: [ "CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/database', timeout=3)" ]
     environment:
       DB_USER: quality_link
       DB_PASSWORD: ${POSTGRES_PASSWORD}
@@ -94,6 +102,8 @@ services:
 
   meili:
     image: getmeili/meilisearch:v1.49
+    healthcheck:
+      test: [ "CMD", "curl", "-f" , "http://localhost:7700" ]
     volumes:
       - meili_data:/meili_data
     environment:
