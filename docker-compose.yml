@@ -11,6 +11,8 @@ services:
         VITE_RECAPTCHA_ENABLED: ${VITE_RECAPTCHA_ENABLED:-true}
     healthcheck:
       test: [ "CMD", "wget", "-O/dev/null", "-q", "http://localhost:3000" ]
+    expose:
+      - "3000"
     restart: unless-stopped
     environment:
       VITE_API_URL: ${VITE_API_URL}
@@ -27,6 +29,8 @@ services:
       POSTGRES_DB: backend
     healthcheck:
       test: [ "CMD", "nc", "-z", "localhost", "5432" ]
+    expose:
+      - "5432"
     volumes:
       - postgres_data:/var/lib/postgresql
     restart: unless-stopped
@@ -40,6 +44,8 @@ services:
     command: minio server /data --console-address "0.0.0.0:9001"
     healthcheck:
       test: [ "CMD", "curl", "-f" , "http://localhost:9001" ]
+    expose:
+      - "9001"
     volumes:
       - minio_data:/data
     restart: unless-stopped
@@ -49,6 +55,8 @@ services:
       context: ./02_backend
     healthcheck:
       test: [ "CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/database', timeout=3)" ]
+    expose:
+      - "8000"
     environment:
       DB_USER: quality_link
       DB_PASSWORD: ${POSTGRES_PASSWORD}
@@ -94,6 +102,8 @@ services:
     volumes:
       - fuseki_data:/fuseki
     restart: unless-stopped
+    expose:
+      - "3030"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3030/$/ping"]
       interval: 30s
@@ -104,6 +114,8 @@ services:
     image: getmeili/meilisearch:v1.49
     healthcheck:
       test: [ "CMD", "curl", "-f" , "http://localhost:7700" ]
+    expose:
+      - "7700"
     volumes:
       - meili_data:/meili_data
     environment:
