@@ -45,7 +45,7 @@ services:
     entrypoint: /bin/sh
     command: [ '-c', 'chown -R minio:minio /data && su minio -s /bin/sh -c "minio server /data --console-address 0.0.0.0:9001"' ]
     healthcheck:
-      test: [ "CMD", "curl", "-f" , "http://localhost:9001" ]
+      test: [ "CMD", "wget", "-q", "-O/dev/null", "http://127.0.0.1:9001" ]
     expose:
       - "9001"
     volumes:
