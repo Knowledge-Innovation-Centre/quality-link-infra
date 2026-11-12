@@ -37,11 +37,13 @@ services:
     command: postgres -c max_connections=100 -c shared_buffers=512MB
 
   minio:
-    image: quay.io/minio/minio:RELEASE.2025-06-13T11-33-47Z
+    image: alpine/minio:RELEASE.2025-10-15T17-29-55Z
     environment:
       MINIO_ROOT_USER: admin
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
-    command: minio server /data --console-address "0.0.0.0:9001"
+    user: root
+    entrypoint: /bin/sh
+    command: [ '-c', 'chown -R minio:minio /data && su minio -s /bin/sh -c "minio server /data --console-address 0.0.0.0:9001"' ]
     healthcheck:
       test: [ "CMD", "curl", "-f" , "http://localhost:9001" ]
     expose:
