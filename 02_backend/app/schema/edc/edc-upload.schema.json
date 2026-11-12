@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "EDC issuer upload file",
+  "description": "A single credential plus its delivery details, as accepted by the EDC issuer's 'Upload JSON' feature. The credential validates against the EDC generic schema, except that @context and issuer are not required (relaxed in services/edc.py at load time).",
+  "type": "object",
+  "properties": {
+    "credential": {
+      "$ref": "EDC-generic.jschema.json"
+    },
+    "deliveryDetails": {
+      "type": "object",
+      "properties": {
+        "deliveryAddress": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "minItems": 1
+        },
+        "displayDetails": {
+          "type": "object"
+        }
+      },
+      "required": ["deliveryAddress"]
+    }
+  },
+  "required": ["credential", "deliveryDetails"]
+}

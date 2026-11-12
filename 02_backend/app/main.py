@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from config import SERVICE_URL_FRONTEND
 from database import SessionLocal
-from routers import credentials, datalake, health, manifest, providers, search
+from routers import credentials, datalake, edc, health, manifest, providers, search
 from services.keys import ensure_active_keypair
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -60,7 +60,8 @@ app.include_router(datalake.router)
 
 # Public sub-app — wildcard CORS, no credentials. Only intentionally public,
 # unauthenticated, read-only routes belong here: the QL public key (fetched by
-# provider domains) and the read-only Meilisearch search proxy.
+# provider domains), the read-only Meilisearch search proxy and the EDC
+# credential templates built from (already public) course data.
 public_app = FastAPI()
 public_app.add_middleware(
     CORSMiddleware,
@@ -70,6 +71,7 @@ public_app.add_middleware(
 )
 public_app.include_router(credentials.router)
 public_app.include_router(search.router)
+public_app.include_router(edc.router)
 app.mount(PUBLIC_PREFIX, public_app)
 
 if __name__ == "__main__":

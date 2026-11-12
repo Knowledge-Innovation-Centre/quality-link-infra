@@ -1,3 +1,5 @@
+import json
+from pathlib import Path
 from typing import Optional
 from uuid import UUID
 
@@ -30,6 +32,7 @@ from services.courses import (
     resolve_course_uuid,
 )
 from services.datalake import queue_provider_data
+from services.edc import InstanceNotFound, build_edc_template, validate_edc_template
 from services.providers import get_provider, resolve_provider_uuid
 
 courses_app = typer.Typer(help="Courses operations", no_args_is_help=True)
@@ -190,6 +193,64 @@ def courses_frame(
     )
 
     console.print_json(data=frame_course(course_uri))
+
+
+@courses_app.command("edc")
+def courses_edc(
+    course: str = typer.Argument(..., help="Course URI or UUID"),
+    to: Optional[list[str]] = typer.Option(
+        None, "--to", help="Delivery address (email or wallet); repeat for several"
+    ),
+    given_name: Optional[str] = typer.Option(None, "--given-name"),
+    family_name: Optional[str] = typer.Option(None, "--family-name"),
+    instance: Optional[str] = typer.Option(
+        None, "--instance", help="URI of a learning opportunity instance to include"
+    ),
+    output: Optional[Path] = typer.Option(
+        None, "--output", "-o", help="Write the template here instead of stdout"
+    ),
+) -> None:
+    """
+    Build an EDC issuer upload template for a single course and validate it
+    """
+    try:
+        UUID(course)
+        course_uri = resolve_course_uri(course)
+    except ValueError:
+        course_uri = course
+    except CourseNotFound as e:
+        _die(str(e))
+
+    try:
+        doc = build_edc_template(
+            course_uri,
+            delivery_addresses=to,
+            given_name=given_name,
+            family_name=family_name,
+            instance_uri=instance,
+        )
+    except (CourseNotFound, InstanceNotFound) as e:
+        _die(str(e))
+
+    errors = validate_edc_template(doc)
+    # Status goes to stderr so stdout stays a clean JSON document.
+    err_console = Console(stderr=True)
+    if errors:
+        err_console.print(f"[red]Template is not valid ({len(errors)} error(s)):[/red]")
+        for error in errors:
+            err_console.print(f"  [red]•[/red] {error}")
+    else:
+        err_console.print("[green]Template is valid[/green]")
+
+    text_out = json.dumps(doc, indent=2, ensure_ascii=False)
+    if output:
+        output.write_text(text_out, encoding="utf-8")
+        err_console.print(f"Written to [cyan]{output}[/cyan]")
+    else:
+        print(text_out)
+
+    if errors:
+        raise typer.Exit(code=1)
 
 
 @courses_app.command("fetch")

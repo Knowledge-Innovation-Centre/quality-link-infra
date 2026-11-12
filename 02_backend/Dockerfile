@@ -1,8 +1,8 @@
 # Use an official Python runtime as a parent image
 FROM python:3.10-slim
 
-# Install PostgreSQL development dependencies
-RUN apt-get update && apt-get install -y libpq-dev gcc
+# Install PostgreSQL development dependencies and the font used to render EDC display images
+RUN apt-get update && apt-get install -y libpq-dev gcc fonts-dejavu-core
 
 # Set the working directory inside the container
 WORKDIR /app

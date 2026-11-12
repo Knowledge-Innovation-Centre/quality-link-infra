@@ -21,3 +21,7 @@ dnspython
 pyyaml
 cryptography
 requests
+
+# EDC credential templates (schema validation + display image)
+jsonschema[format-nongpl]
+Pillow

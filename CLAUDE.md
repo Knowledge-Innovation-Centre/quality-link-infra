@@ -24,9 +24,9 @@ Meilisearch is expected to run externally in production; add it via `docker-comp
 
 The backend is modular, not a single-file app. Layout:
 
-- `main.py` — FastAPI app factory. Mounts `routers/` and a separate public sub-app at `/api/v1` with wildcard CORS for the `credentials` router (so provider domains can fetch the QL public key) and the `search` router (public read-only Meilisearch proxy).
+- `main.py` — FastAPI app factory. Mounts `routers/` and a separate public sub-app at `/api/v1` with wildcard CORS for the `credentials` router (so provider domains can fetch the QL public key), the `search` router (public read-only Meilisearch proxy) and the `edc` router (EDC issuer upload templates).
 - `cli.py` — Typer CLI entry point; assembles the groups defined under `cli/` (`provider`, `vocabulary`, `course`).
-- `cli/` — per-group command modules: `providers.py` (list / manifest / sources / refresh), `vocabulary.py` (fetch), `courses.py` (list / frame / fetch / silver / reindex — the course-pipeline ops), `eter.py` (fetch / show — ETER indicators).
+- `cli/` — per-group command modules: `providers.py` (list / manifest / sources / refresh), `vocabulary.py` (fetch), `courses.py` (list / frame / fetch / silver / reindex / purge / edc — the course-pipeline ops), `eter.py` (fetch / show — ETER indicators).
 - `config.py` — env-var loading (DB, MinIO, Fuseki, Meilisearch, DEQAR, default vocabularies, graph IRIs).
 - `database.py` — SQLAlchemy engine + `SessionLocal`. Use `get_db` (FastAPI dep) in routers; open `SessionLocal()` directly in CLI commands and background tasks.
 - `routers/` — HTTP adapters only; delegate to services.
@@ -39,8 +39,10 @@ The backend is modular, not a single-file app. Layout:
   - `eter.py` — ETER API client, MinIO raw-payload cache, student-to-staff ratio derivation, and the push into the Fuseki stats graph. **No Postgres table by design** — MinIO holds the raw payload and Fuseki the derived ratios; don't "fix" the missing table.
   - `course_fetch/ratio.py` — gold-time resolution of the closest-matching ratio for a framed course.
   - `search.py` — read-only proxy to the Meilisearch `search` endpoint of `MEILISEARCH_INDEX`, using the search-only `MEILISEARCH_SEARCH_KEY` (never the master key; 503 if unset). Backs `GET|POST /api/v1/search`.
+  - `edc.py` — builds an upload file for the web-based EDC issuer ("Upload JSON") from one framed course: `{"credential": …, "deliveryDetails": {"deliveryAddress": […]}}`, the course as `specifiedBy` (Qualification or LearningAchievementSpecification) of a LearningAchievement awarded by the publisher, optionally with one instance as `learningOpportunity`. Validated against the vendored EDC generic schema (`schema/edc/`, kept byte-identical to upstream) with `@context` and `issuer` relaxed **at load time in code** — don't edit the vendored schema files. `edc_image.py` renders the required display image (Pillow, DejaVu font from the image's `fonts-dejavu-core`, logo in `assets/`). Backs `GET /api/v1/courses/{uuid}/edc-template` (404 unknown course/instance, 422 with the schema errors when the course data can't yield a valid credential).
   - `fuseki.py`, `keys.py`, `locks.py`, `vocabulary.py` — Fuseki client, `ql_cred` keypair management, advisory-lock helpers, EU controlled-vocabulary fetcher.
-- `schema/frame.json` — JSON-LD frame used by the gold stage.
+- `schema/frame.json` — JSON-LD frame used by the gold stage (and reused by `services/edc.py`).
+- `schema/edc/` — vendored EDC generic + VC 1.1 JSON schemas, and the `edc-upload.schema.json` wrapper for the upload file.
 
 ### Locking model
 
@@ -109,6 +111,7 @@ python cli.py course fetch    <UUID|ETER_ID|DEQAR_ID> [--source SOURCE_UUID]    
 python cli.py course silver   [<UUID|ETER_ID|DEQAR_ID>] [--source SOURCE_UUID] [--all]  # re-run silver from latest bronze
 python cli.py course reindex  [<URI|UUID>] [--provider <UUID|ETER_ID|DEQAR_ID>] [--all]  # re-run gold / Meilisearch
 python cli.py course purge    [<URI|UUID>] [--provider <UUID|ETER_ID|DEQAR_ID>] [--all] [--dry-run]  # delete from Fuseki + Meilisearch
+python cli.py course edc      <URI|UUID> [--to ADDR ...] [--given-name X] [--family-name Y] [--instance URI] [-o FILE]  # EDC upload template + validation
 python cli.py provider list   [SEARCH] [--with-data] [--page N] [--page-size N]
 python cli.py provider manifest <UUID|ETER_ID|DEQAR_ID>   # DNS + .well-known discovery
 python cli.py provider sources  <UUID|ETER_ID|DEQAR_ID>   # show probes + latest version's sources
@@ -140,7 +143,7 @@ Or run inside the container: `docker-compose exec backend python cli.py ...`.
 - **Database access** uses SQLAlchemy with raw `text()` SQL — no ORM models. Parameterize everything.
 - **Sessions**: HTTP handlers use `Depends(get_db)`; CLI commands and background tasks open their own `SessionLocal()` via `with` blocks.
 - **Provider identifiers**: services that take a provider accept a UUID; the CLI resolves UUID / ETER id / DEQAR id via `services.providers.resolve_provider_uuid`.
-- **CORS**: the main app allows the configured frontend origin; the `/api/v1` sub-app uses wildcard CORS (no credentials) — only intentionally public, unauthenticated, read-only routes belong there (today: public key, search proxy). The main app wraps `ScopedCORSMiddleware` (`main.py`), which passes `/api/v1/*` through untouched — stock `CORSMiddleware` answers every preflight itself and would 400 foreign origins before the sub-app ever sees them.
+- **CORS**: the main app allows the configured frontend origin; the `/api/v1` sub-app uses wildcard CORS (no credentials) — only intentionally public, unauthenticated, read-only routes belong there (today: public key, search proxy, EDC templates). The main app wraps `ScopedCORSMiddleware` (`main.py`), which passes `/api/v1/*` through untouched — stock `CORSMiddleware` answers every preflight itself and would 400 foreign origins before the sub-app ever sees them.
 
 ### Frontend
 - Path alias `@/` → `src/`. Pages in `src/pages/`, feature components in `src/components/features/`, reusable UI in `src/components/ui/`, API clients in `src/api/`, hooks in `src/hooks/`, types in `src/types/`.

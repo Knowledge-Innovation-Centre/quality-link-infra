@@ -67,3 +67,4 @@ DEFAULT_VOCABULARIES = [
 ]
 
 SCHEMA_DIR = Path(os.getenv("SCHEMA_DIR", Path(__file__).resolve().parent / "schema"))
+ASSETS_DIR = Path(os.getenv("ASSETS_DIR", Path(__file__).resolve().parent / "assets"))
